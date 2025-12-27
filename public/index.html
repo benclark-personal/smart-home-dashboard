@@ -460,6 +460,15 @@
       <div class="chart-header">
         <span class="chart-title">Indoor Temperature History</span>
         <div class="chart-controls">
+          <select id="roomFilter" onchange="applyRoomFilter()" style="margin-right: 8px;">
+            <option value="all" selected>All Rooms</option>
+            <option value="Entrance Hall">Entrance Hall</option>
+            <option value="Living Room">Living Room</option>
+            <option value="Dining Room (Console)">Dining Room</option>
+            <option value="Laundry">Laundry</option>
+            <option value="Master Bedroom">Master Bedroom</option>
+            <option value="Layla Room">Layla Room</option>
+          </select>
           <select id="historyHours" onchange="loadHistory()">
             <option value="0.167">10 mins</option>
             <option value="0.5">30 mins</option>
@@ -762,6 +771,7 @@
     let humidityChart = null;
     let outdoorTempChart = null;
     let outdoorHumidityChart = null;
+    let historyData = null;  // Store history data for filtering
 
     function showTab(tabName) {
       document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
@@ -888,11 +898,19 @@
       const hours = parseFloat(document.getElementById('historyHours').value);
       try {
         const response = await fetch(`/api/history?hours=${hours}`);
-        const data = await response.json();
-        renderCharts(data, hours);
+        historyData = await response.json();
+        const selectedRoom = document.getElementById('roomFilter').value;
+        renderCharts(historyData, hours, selectedRoom);
       } catch (error) {
         console.error('Error loading history:', error);
       }
+    }
+
+    function applyRoomFilter() {
+      if (!historyData) return;
+      const hours = parseFloat(document.getElementById('historyHours').value);
+      const selectedRoom = document.getElementById('roomFilter').value;
+      renderCharts(historyData, hours, selectedRoom);
     }
 
     function createLegendHtml(rooms) {
@@ -901,7 +919,7 @@
       ).join('');
     }
 
-    function renderCharts(data, hours = 24) {
+    function renderCharts(data, hours = 24, selectedRoom = 'all') {
       // Group by room
       const byRoom = {};
       for (const row of data) {
@@ -909,8 +927,11 @@
         byRoom[row.room_name].push({ x: new Date(row.timestamp), y: row.temperature_c, humidity: row.humidity });
       }
 
-      // Split indoor and outdoor
-      const indoorRooms = Object.keys(byRoom).filter(r => r !== 'Outside');
+      // Split indoor and outdoor, apply room filter
+      let indoorRooms = Object.keys(byRoom).filter(r => r !== 'Outside');
+      if (selectedRoom !== 'all') {
+        indoorRooms = indoorRooms.filter(r => r === selectedRoom);
+      }
       const outdoorData = byRoom['Outside'] || [];
       const indoorLegendHtml = createLegendHtml(indoorRooms);
 
