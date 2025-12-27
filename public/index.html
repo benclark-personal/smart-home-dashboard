@@ -267,6 +267,71 @@
       background: rgba(255, 255, 255, 0.15);
     }
 
+    /* Multi-select dropdown */
+    .multi-select {
+      position: relative;
+      display: inline-block;
+    }
+
+    .multi-select-btn {
+      padding: 6px 12px;
+      background: rgba(255, 255, 255, 0.1);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      border-radius: 6px;
+      color: #fff;
+      font-size: 0.8rem;
+      cursor: pointer;
+      min-width: 120px;
+      text-align: left;
+    }
+
+    .multi-select-btn:hover {
+      background: rgba(255, 255, 255, 0.15);
+    }
+
+    .multi-select-dropdown {
+      display: none;
+      position: absolute;
+      top: 100%;
+      left: 0;
+      background: #1a1a2e;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      border-radius: 6px;
+      padding: 8px 0;
+      min-width: 160px;
+      z-index: 100;
+      max-height: 250px;
+      overflow-y: auto;
+    }
+
+    .multi-select-dropdown.show {
+      display: block;
+    }
+
+    .multi-select-item {
+      display: flex;
+      align-items: center;
+      padding: 6px 12px;
+      cursor: pointer;
+      font-size: 0.8rem;
+      color: #ccc;
+    }
+
+    .multi-select-item:hover {
+      background: rgba(255, 255, 255, 0.1);
+    }
+
+    .multi-select-item input {
+      margin-right: 8px;
+      accent-color: #4fc3f7;
+    }
+
+    .multi-select-item.select-all {
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      margin-bottom: 4px;
+      padding-bottom: 10px;
+    }
+
     /* Analysis tables */
     .analysis-table {
       width: 100%;
@@ -460,15 +525,20 @@
       <div class="chart-header">
         <span class="chart-title">Indoor Temperature History</span>
         <div class="chart-controls">
-          <select id="roomFilter" onchange="applyRoomFilter()" style="margin-right: 8px;">
-            <option value="all" selected>All Rooms</option>
-            <option value="Entrance Hall">Entrance Hall</option>
-            <option value="Living Room">Living Room</option>
-            <option value="Dining Room (Console)">Dining Room</option>
-            <option value="Laundry">Laundry</option>
-            <option value="Master Bedroom">Master Bedroom</option>
-            <option value="Layla Room">Layla Room</option>
-          </select>
+          <div class="multi-select" id="roomFilterContainer">
+            <button class="multi-select-btn" onclick="toggleRoomFilter(event)">All Rooms ▾</button>
+            <div class="multi-select-dropdown" id="roomFilterDropdown">
+              <label class="multi-select-item select-all">
+                <input type="checkbox" id="roomSelectAll" checked onchange="toggleAllRooms(this.checked)"> All Rooms
+              </label>
+              <label class="multi-select-item"><input type="checkbox" value="Entrance Hall" checked onchange="updateRoomFilter()"> Entrance Hall</label>
+              <label class="multi-select-item"><input type="checkbox" value="Living Room" checked onchange="updateRoomFilter()"> Living Room</label>
+              <label class="multi-select-item"><input type="checkbox" value="Dining Room (Console)" checked onchange="updateRoomFilter()"> Dining Room</label>
+              <label class="multi-select-item"><input type="checkbox" value="Laundry" checked onchange="updateRoomFilter()"> Laundry</label>
+              <label class="multi-select-item"><input type="checkbox" value="Master Bedroom" checked onchange="updateRoomFilter()"> Master Bedroom</label>
+              <label class="multi-select-item"><input type="checkbox" value="Layla Room" checked onchange="updateRoomFilter()"> Layla Room</label>
+            </div>
+          </div>
           <select id="historyHours" onchange="loadHistory()">
             <option value="0.167">10 mins</option>
             <option value="0.5">30 mins</option>
@@ -899,19 +969,64 @@
       try {
         const response = await fetch(`/api/history?hours=${hours}`);
         historyData = await response.json();
-        const selectedRoom = document.getElementById('roomFilter').value;
-        renderCharts(historyData, hours, selectedRoom);
+        const selectedRooms = getSelectedRooms();
+        renderCharts(historyData, hours, selectedRooms);
       } catch (error) {
         console.error('Error loading history:', error);
       }
     }
 
-    function applyRoomFilter() {
-      if (!historyData) return;
-      const hours = parseFloat(document.getElementById('historyHours').value);
-      const selectedRoom = document.getElementById('roomFilter').value;
-      renderCharts(historyData, hours, selectedRoom);
+    function toggleRoomFilter(event) {
+      event.stopPropagation();
+      const dropdown = document.getElementById('roomFilterDropdown');
+      dropdown.classList.toggle('show');
     }
+
+    function toggleAllRooms(checked) {
+      const checkboxes = document.querySelectorAll('#roomFilterDropdown input[type="checkbox"]:not(#roomSelectAll)');
+      checkboxes.forEach(cb => cb.checked = checked);
+      updateRoomFilter();
+    }
+
+    function getSelectedRooms() {
+      const checkboxes = document.querySelectorAll('#roomFilterDropdown input[type="checkbox"]:not(#roomSelectAll):checked');
+      return Array.from(checkboxes).map(cb => cb.value);
+    }
+
+    function updateRoomFilter() {
+      const selectedRooms = getSelectedRooms();
+      const allCheckbox = document.getElementById('roomSelectAll');
+      const totalRooms = document.querySelectorAll('#roomFilterDropdown input[type="checkbox"]:not(#roomSelectAll)').length;
+
+      // Update "All" checkbox state
+      allCheckbox.checked = selectedRooms.length === totalRooms;
+
+      // Update button text
+      const btn = document.querySelector('#roomFilterContainer .multi-select-btn');
+      if (selectedRooms.length === 0) {
+        btn.textContent = 'No Rooms ▾';
+      } else if (selectedRooms.length === totalRooms) {
+        btn.textContent = 'All Rooms ▾';
+      } else if (selectedRooms.length === 1) {
+        btn.textContent = selectedRooms[0].replace(' (Console)', '') + ' ▾';
+      } else {
+        btn.textContent = selectedRooms.length + ' Rooms ▾';
+      }
+
+      // Re-render charts
+      if (historyData) {
+        const hours = parseFloat(document.getElementById('historyHours').value);
+        renderCharts(historyData, hours, selectedRooms);
+      }
+    }
+
+    // Close dropdown when clicking outside
+    document.addEventListener('click', function(e) {
+      const container = document.getElementById('roomFilterContainer');
+      if (container && !container.contains(e.target)) {
+        document.getElementById('roomFilterDropdown').classList.remove('show');
+      }
+    });
 
     function createLegendHtml(rooms) {
       return rooms.map(room =>
@@ -919,7 +1034,7 @@
       ).join('');
     }
 
-    function renderCharts(data, hours = 24, selectedRoom = 'all') {
+    function renderCharts(data, hours = 24, selectedRooms = null) {
       // Group by room
       const byRoom = {};
       for (const row of data) {
@@ -929,8 +1044,8 @@
 
       // Split indoor and outdoor, apply room filter
       let indoorRooms = Object.keys(byRoom).filter(r => r !== 'Outside');
-      if (selectedRoom !== 'all') {
-        indoorRooms = indoorRooms.filter(r => r === selectedRoom);
+      if (selectedRooms && selectedRooms.length > 0) {
+        indoorRooms = indoorRooms.filter(r => selectedRooms.includes(r));
       }
       const outdoorData = byRoom['Outside'] || [];
       const indoorLegendHtml = createLegendHtml(indoorRooms);
