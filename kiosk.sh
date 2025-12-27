@@ -10,7 +10,7 @@ xset -dpms
 unclutter -idle 3 -root &
 
 # Wait for dashboard service to be ready
-sleep 5
+sleep 3
 
-# Start Chromium in kiosk mode
-chromium --kiosk --noerrdialogs --disable-infobars --disable-session-crashed-bubble --disable-restore-session-state --no-first-run --start-fullscreen http://localhost:3001
+# Start Chromium in kiosk mode with proper fullscreen
+chromium --no-sandbox --kiosk --noerrdialogs --disable-infobars --disable-session-crashed-bubble --disable-restore-session-state --no-first-run --start-fullscreen --start-maximized --window-size=1920,1080 --window-position=0,0 http://localhost:3001
