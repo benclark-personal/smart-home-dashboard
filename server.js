@@ -37,6 +37,19 @@ const BRIGHT_CONFIG = {
 let brightToken = null;
 let brightTokenExpiry = null;
 
+// Severn Trent Water API configuration (Kraken platform)
+const SEVERN_TRENT_CONFIG = {
+  email: process.env.SEVERN_TRENT_EMAIL || 'benclark.mail@gmail.com',
+  password: process.env.SEVERN_TRENT_PASSWORD || 'xra+aG9pK&xc%HS',
+  apiUrl: 'https://api.st.kraken.tech/v1/graphql/',
+  meterSerial: '16MA207763'
+};
+
+let stToken = null;
+let stRefreshToken = null;
+let stTokenExpiry = 0;
+let stAccountNumber = null;
+
 // Room name mapping
 const ROOM_NAMES = {
   indoor: 'Dining Room (Console)',
@@ -78,6 +91,18 @@ db.exec(`
 
   CREATE INDEX IF NOT EXISTS idx_energy_timestamp ON energy_readings(timestamp);
   CREATE INDEX IF NOT EXISTS idx_energy_type ON energy_readings(type);
+
+  CREATE TABLE IF NOT EXISTS water_readings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp DATETIME NOT NULL,
+    reading_date DATE NOT NULL,
+    consumption_m3 REAL NOT NULL,
+    reading_type TEXT NOT NULL DEFAULT 'smart',
+    meter_serial TEXT,
+    UNIQUE(reading_date, reading_type)
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_water_date ON water_readings(reading_date);
 `);
 
 // Convert Fahrenheit to Celsius
@@ -260,6 +285,348 @@ async function pollBright() {
   } catch (error) {
     console.error('[Bright] Poll error:', error.message);
   }
+}
+
+// Severn Trent Water API - GraphQL authentication
+function authenticateSevernTrent() {
+  return new Promise((resolve, reject) => {
+    const mutation = `
+      mutation ObtainKrakenToken($input: ObtainJSONWebTokenInput!) {
+        obtainKrakenToken(input: $input) {
+          token
+          payload
+          refreshToken
+          refreshExpiresIn
+        }
+      }
+    `;
+
+    const postData = JSON.stringify({
+      query: mutation,
+      variables: {
+        input: {
+          email: SEVERN_TRENT_CONFIG.email,
+          password: SEVERN_TRENT_CONFIG.password
+        }
+      },
+      operationName: 'ObtainKrakenToken'
+    });
+
+    const url = new URL(SEVERN_TRENT_CONFIG.apiUrl);
+    const options = {
+      hostname: url.hostname,
+      port: 443,
+      path: url.pathname,
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(postData)
+      }
+    };
+
+    const req = https.request(options, (res) => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => {
+        try {
+          const result = JSON.parse(data);
+          if (result.data && result.data.obtainKrakenToken && result.data.obtainKrakenToken.token) {
+            stToken = result.data.obtainKrakenToken.token;
+            stRefreshToken = result.data.obtainKrakenToken.refreshToken;
+            stTokenExpiry = Date.now() + (10 * 60 * 1000); // 10 minutes
+            console.log('[SevernTrent] Authenticated successfully');
+            resolve(stToken);
+          } else {
+            const error = result.errors ? result.errors[0].message : 'Authentication failed';
+            console.error('[SevernTrent] Auth error:', error);
+            reject(new Error(error));
+          }
+        } catch (e) {
+          reject(e);
+        }
+      });
+    });
+
+    req.on('error', reject);
+    req.write(postData);
+    req.end();
+  });
+}
+
+// Get valid Severn Trent token (refresh if needed)
+async function getSevernTrentToken() {
+  if (stToken && Date.now() < stTokenExpiry) {
+    return stToken;
+  }
+  return await authenticateSevernTrent();
+}
+
+// Fetch Severn Trent account number
+function fetchSevernTrentAccountNumber(token) {
+  return new Promise((resolve, reject) => {
+    const query = `
+      query AccountNumberList {
+        viewer {
+          accounts {
+            number
+          }
+        }
+      }
+    `;
+
+    const postData = JSON.stringify({
+      query: query,
+      operationName: 'AccountNumberList'
+    });
+
+    const url = new URL(SEVERN_TRENT_CONFIG.apiUrl);
+    const options = {
+      hostname: url.hostname,
+      port: 443,
+      path: url.pathname,
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': token,
+        'Content-Length': Buffer.byteLength(postData)
+      }
+    };
+
+    const req = https.request(options, (res) => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => {
+        try {
+          const result = JSON.parse(data);
+          if (result.data && result.data.viewer && result.data.viewer.accounts) {
+            const accounts = result.data.viewer.accounts;
+            if (accounts.length > 0) {
+              stAccountNumber = accounts[0].number;
+              console.log(`[SevernTrent] Found account: ${stAccountNumber}`);
+              resolve(stAccountNumber);
+            } else {
+              reject(new Error('No accounts found'));
+            }
+          } else {
+            reject(new Error('Failed to fetch account number'));
+          }
+        } catch (e) {
+          reject(e);
+        }
+      });
+    });
+
+    req.on('error', reject);
+    req.write(postData);
+    req.end();
+  });
+}
+
+// Fetch Severn Trent smart meter readings
+function fetchSevernTrentReadings(token, accountNumber, startDate, endDate) {
+  return new Promise((resolve, reject) => {
+    const query = `
+      query SmartMeterReadings($accountNumber: String!, $startAt: DateTime, $endAt: DateTime, $utilityFilters: [UtilityFiltersInput]!) {
+        account(accountNumber: $accountNumber) {
+          properties {
+            measurements(
+              first: 1000
+              startAt: $startAt
+              endAt: $endAt
+              utilityFilters: $utilityFilters
+            ) {
+              edges {
+                node {
+                  ... on IntervalMeasurementType {
+                    startAt
+                    endAt
+                  }
+                  value
+                  unit
+                  readAt
+                }
+              }
+            }
+          }
+        }
+      }
+    `;
+
+    const postData = JSON.stringify({
+      query: query,
+      variables: {
+        accountNumber: accountNumber,
+        startAt: startDate.toISOString(),
+        endAt: endDate.toISOString(),
+        utilityFilters: [{ utilityType: 'WATER' }]
+      },
+      operationName: 'SmartMeterReadings'
+    });
+
+    const url = new URL(SEVERN_TRENT_CONFIG.apiUrl);
+    const options = {
+      hostname: url.hostname,
+      port: 443,
+      path: url.pathname,
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': token,
+        'Content-Length': Buffer.byteLength(postData)
+      }
+    };
+
+    const req = https.request(options, (res) => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => {
+        try {
+          const result = JSON.parse(data);
+          console.log('[SevernTrent] Readings response:', JSON.stringify(result).slice(0, 500));
+
+          if (result.data && result.data.account && result.data.account.properties) {
+            const readings = [];
+            for (const property of result.data.account.properties) {
+              if (property.measurements && property.measurements.edges) {
+                for (const edge of property.measurements.edges) {
+                  const node = edge.node;
+                  if (node && node.value !== null) {
+                    readings.push({
+                      timestamp: node.readAt || node.startAt,
+                      reading_date: (node.readAt || node.startAt).slice(0, 10),
+                      consumption_m3: parseFloat(node.value),
+                      reading_type: 'smart',
+                      meter_serial: SEVERN_TRENT_CONFIG.meterSerial
+                    });
+                  }
+                }
+              }
+            }
+            resolve(readings);
+          } else {
+            console.log('[SevernTrent] No readings in response');
+            resolve([]);
+          }
+        } catch (e) {
+          reject(e);
+        }
+      });
+    });
+
+    req.on('error', reject);
+    req.write(postData);
+    req.end();
+  });
+}
+
+// Poll Severn Trent for water data
+async function pollSevernTrent() {
+  try {
+    console.log('[SevernTrent] Polling water data...');
+
+    const token = await getSevernTrentToken();
+
+    // Get account number if not cached
+    if (!stAccountNumber) {
+      await fetchSevernTrentAccountNumber(token);
+    }
+
+    // Get last 7 days of data (data is delayed by ~1 day)
+    const endDate = new Date();
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - 7);
+
+    const readings = await fetchSevernTrentReadings(token, stAccountNumber, startDate, endDate);
+
+    if (readings.length === 0) {
+      console.log('[SevernTrent] No new readings');
+      return;
+    }
+
+    // Store in local SQLite
+    const insertStmt = db.prepare(`
+      INSERT OR REPLACE INTO water_readings (timestamp, reading_date, consumption_m3, reading_type, meter_serial)
+      VALUES (?, ?, ?, ?, ?)
+    `);
+
+    let count = 0;
+    const insertMany = db.transaction((readings) => {
+      for (const r of readings) {
+        if (r.consumption_m3 > 0) {
+          insertStmt.run(r.timestamp, r.reading_date, r.consumption_m3, r.reading_type, r.meter_serial);
+          count++;
+        }
+      }
+    });
+
+    insertMany(readings);
+    console.log(`[SevernTrent] Stored ${count} water readings locally`);
+
+    // Sync to Supabase
+    const validReadings = readings.filter(r => r.consumption_m3 > 0);
+    if (validReadings.length > 0) {
+      await syncWaterToSupabase(validReadings);
+    }
+  } catch (error) {
+    console.error('[SevernTrent] Poll error:', error.message);
+  }
+}
+
+// Sync water readings to Supabase cloud
+function syncWaterToSupabase(readings) {
+  return new Promise((resolve, reject) => {
+    if (!readings || readings.length === 0) {
+      resolve(true);
+      return;
+    }
+
+    const supabaseReadings = readings.map(r => ({
+      timestamp: r.timestamp,
+      reading_date: r.reading_date,
+      consumption_m3: r.consumption_m3,
+      reading_type: r.reading_type,
+      meter_serial: r.meter_serial
+    }));
+
+    const postData = JSON.stringify(supabaseReadings);
+    const url = new URL(`${SUPABASE_CONFIG.url}/rest/v1/water_readings`);
+
+    const options = {
+      hostname: url.hostname,
+      port: 443,
+      path: url.pathname,
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': SUPABASE_CONFIG.serviceKey,
+        'Authorization': `Bearer ${SUPABASE_CONFIG.serviceKey}`,
+        'Prefer': 'resolution=merge-duplicates',
+        'Content-Length': Buffer.byteLength(postData)
+      }
+    };
+
+    const req = https.request(options, (res) => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => {
+        if (res.statusCode >= 200 && res.statusCode < 300) {
+          console.log(`[Supabase] Synced ${readings.length} water readings to cloud`);
+          resolve(true);
+        } else {
+          console.error(`[Supabase] Water sync failed (${res.statusCode}):`, data);
+          resolve(false);
+        }
+      });
+    });
+
+    req.on('error', (e) => {
+      console.error('[Supabase] Water sync error:', e.message);
+      resolve(false);
+    });
+
+    req.write(postData);
+    req.end();
+  });
 }
 
 // Sync readings to Supabase cloud
@@ -1203,6 +1570,142 @@ app.get('/api/energy/correlation', (req, res) => {
   res.json(correlation);
 });
 
+// Water API endpoints
+
+// Get water usage summary
+app.get('/api/water/summary', (req, res) => {
+  const result = db.prepare(`
+    SELECT
+      SUM(CASE WHEN reading_date >= date('now', '-7 days') THEN consumption_m3 ELSE 0 END) as week_m3,
+      SUM(CASE WHEN reading_date >= date('now', '-30 days') THEN consumption_m3 ELSE 0 END) as month_m3,
+      AVG(CASE WHEN reading_date >= date('now', '-7 days') THEN consumption_m3 ELSE NULL END) as avg_daily_m3
+    FROM water_readings
+    WHERE reading_type = 'smart'
+  `).get();
+
+  // Get yesterday's reading
+  const yesterday = db.prepare(`
+    SELECT consumption_m3
+    FROM water_readings
+    WHERE reading_type = 'smart'
+      AND reading_date = date('now', '-1 day')
+  `).get();
+
+  res.json({
+    yesterday_m3: yesterday ? yesterday.consumption_m3 : null,
+    yesterday_litres: yesterday ? Math.round(yesterday.consumption_m3 * 1000) : null,
+    week_m3: result.week_m3 || 0,
+    week_litres: Math.round((result.week_m3 || 0) * 1000),
+    month_m3: result.month_m3 || 0,
+    month_litres: Math.round((result.month_m3 || 0) * 1000),
+    avg_daily_m3: result.avg_daily_m3 || 0,
+    avg_daily_litres: Math.round((result.avg_daily_m3 || 0) * 1000)
+  });
+});
+
+// Get daily water readings
+app.get('/api/water/daily', (req, res) => {
+  const days = parseInt(req.query.days) || 30;
+
+  const readings = db.prepare(`
+    SELECT
+      reading_date,
+      consumption_m3,
+      ROUND(consumption_m3 * 1000) as consumption_litres
+    FROM water_readings
+    WHERE reading_type = 'smart'
+      AND reading_date >= date('now', '-' || ? || ' days')
+    ORDER BY reading_date ASC
+  `).all(days);
+
+  res.json(readings);
+});
+
+// Get water history (detailed)
+app.get('/api/water/history', (req, res) => {
+  const days = parseInt(req.query.days) || 7;
+
+  const readings = db.prepare(`
+    SELECT
+      timestamp,
+      reading_date,
+      consumption_m3,
+      reading_type,
+      meter_serial
+    FROM water_readings
+    WHERE reading_date >= date('now', '-' || ? || ' days')
+    ORDER BY reading_date DESC
+  `).all(days);
+
+  res.json(readings);
+});
+
+// Manual trigger for water poll
+app.get('/api/water/poll', async (req, res) => {
+  await pollSevernTrent();
+  res.json({ success: true });
+});
+
+// Water backfill - fetch historical data
+app.get('/api/water/backfill', async (req, res) => {
+  const days = parseInt(req.query.days) || 30;
+  const maxDays = 365;
+  const actualDays = Math.min(days, maxDays);
+
+  try {
+    console.log(`[SevernTrent] Backfilling ${actualDays} days of water data...`);
+
+    const token = await getSevernTrentToken();
+
+    if (!stAccountNumber) {
+      await fetchSevernTrentAccountNumber(token);
+    }
+
+    const endDate = new Date();
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - actualDays);
+
+    const readings = await fetchSevernTrentReadings(token, stAccountNumber, startDate, endDate);
+
+    // Store in local SQLite
+    const insertStmt = db.prepare(`
+      INSERT OR REPLACE INTO water_readings (timestamp, reading_date, consumption_m3, reading_type, meter_serial)
+      VALUES (?, ?, ?, ?, ?)
+    `);
+
+    let count = 0;
+    const insertMany = db.transaction((readings) => {
+      for (const r of readings) {
+        if (r.consumption_m3 > 0) {
+          insertStmt.run(r.timestamp, r.reading_date, r.consumption_m3, r.reading_type, r.meter_serial);
+          count++;
+        }
+      }
+    });
+
+    insertMany(readings);
+    console.log(`[SevernTrent] Backfill stored ${count} water readings`);
+
+    // Sync to Supabase
+    const validReadings = readings.filter(r => r.consumption_m3 > 0);
+    let supabaseSynced = false;
+    if (validReadings.length > 0) {
+      supabaseSynced = await syncWaterToSupabase(validReadings);
+    }
+
+    res.json({
+      success: true,
+      daysRequested: actualDays,
+      readingsFetched: readings.length,
+      readingsStored: count,
+      supabaseSynced: supabaseSynced
+    });
+  } catch (error) {
+    console.error('[SevernTrent] Backfill error:', error.message);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // Start server
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Smart Home Dashboard running on http://0.0.0.0:${PORT}`);
@@ -1210,10 +1713,12 @@ app.listen(PORT, '0.0.0.0', () => {
   // Initial polls
   pollEcowitt();
   pollBright();
+  pollSevernTrent(); // Water data - may fail if credentials invalid
 
   // Schedule regular polling
   setInterval(pollEcowitt, POLL_INTERVAL); // Every 5 minutes
   setInterval(pollBright, 4 * 60 * 60 * 1000); // Every 4 hours (data updates daily)
+  setInterval(pollSevernTrent, 24 * 60 * 60 * 1000); // Every 24 hours (water data delayed by ~1 day)
 });
 
 // Graceful shutdown

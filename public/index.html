@@ -484,6 +484,7 @@
     <button class="tab-btn" onclick="showTab('history')">History</button>
     <button class="tab-btn" onclick="showTab('analysis')">Analysis</button>
     <button class="tab-btn" onclick="showTab('energy')">Energy</button>
+    <button class="tab-btn" onclick="showTab('water')">Water</button>
     <button class="tab-btn" onclick="showTab('data')">Data</button>
   </div>
 
@@ -736,6 +737,89 @@
     </div>
   </div>
 
+  <!-- Water Tab -->
+  <div id="tab-water" class="tab-content">
+    <div class="stats-bar" id="waterStatsBar">
+      <div class="stat" style="border-left: 3px solid #2196f3;">
+        <div class="stat-label">Yesterday</div>
+        <div class="stat-value" id="waterYesterday" style="color: #2196f3;">--</div>
+        <div class="stat-room">litres</div>
+      </div>
+      <div class="stat" style="border-left: 3px solid #03a9f4;">
+        <div class="stat-label">7-Day Avg</div>
+        <div class="stat-value" id="waterAvg" style="color: #03a9f4;">--</div>
+        <div class="stat-room">litres/day</div>
+      </div>
+      <div class="stat" style="border-left: 3px solid #00bcd4;">
+        <div class="stat-label">This Week</div>
+        <div class="stat-value" id="waterWeek" style="color: #00bcd4;">--</div>
+        <div class="stat-room">litres</div>
+      </div>
+      <div class="stat" style="border-left: 3px solid #009688;">
+        <div class="stat-label">This Month</div>
+        <div class="stat-value" id="waterMonth" style="color: #009688;">--</div>
+        <div class="stat-room">litres</div>
+      </div>
+    </div>
+
+    <div class="chart-container">
+      <div class="chart-header">
+        <span class="chart-title">Daily Water Usage</span>
+        <div class="chart-controls">
+          <select id="waterDays" onchange="loadWaterData()">
+            <option value="7">1 Week</option>
+            <option value="30" selected>1 Month</option>
+            <option value="90">3 Months</option>
+            <option value="365">1 Year</option>
+          </select>
+        </div>
+      </div>
+      <div id="waterNoData" style="text-align: center; padding: 40px; color: #888; display: none;">
+        <p style="font-size: 1.2rem; margin-bottom: 10px;">Awaiting water data...</p>
+        <p>Severn Trent smart meter data typically has a 24-48 hour delay.</p>
+        <p style="margin-top: 10px;"><button onclick="pollWater()" style="padding: 8px 16px; background: rgba(33, 150, 243, 0.2); border: 1px solid rgba(33, 150, 243, 0.4); border-radius: 6px; color: #2196f3; cursor: pointer;">Check Now</button></p>
+      </div>
+      <div style="height: 300px;"><canvas id="waterChart"></canvas></div>
+      <div class="chart-legend" id="waterLegend" style="margin-top: 10px; text-align: center;">
+        <span><span style="display: inline-block; width: 12px; height: 12px; background: rgba(33, 150, 243, 0.7); border-radius: 2px; margin-right: 5px;"></span>Daily Usage (litres)</span>
+        <span style="margin-left: 20px; color: #888; font-size: 0.85rem;">Meter: 16MA207763</span>
+      </div>
+    </div>
+
+    <div class="chart-container" style="background: rgba(33, 150, 243, 0.05);">
+      <div class="chart-header">
+        <span class="chart-title">Water Usage Reference</span>
+      </div>
+      <p style="color: #888; font-size: 0.85rem; margin-bottom: 15px;">Typical daily water usage for a 2-person household: 250-300 litres</p>
+      <table style="width: 100%; color: #ccc; font-size: 0.85rem; border-collapse: collapse;">
+        <tr style="border-bottom: 1px solid rgba(255,255,255,0.1);">
+          <td style="padding: 8px 0;">Shower (5 mins)</td>
+          <td style="text-align: right;">~40 litres</td>
+        </tr>
+        <tr style="border-bottom: 1px solid rgba(255,255,255,0.1);">
+          <td style="padding: 8px 0;">Bath</td>
+          <td style="text-align: right;">~80 litres</td>
+        </tr>
+        <tr style="border-bottom: 1px solid rgba(255,255,255,0.1);">
+          <td style="padding: 8px 0;">Toilet flush</td>
+          <td style="text-align: right;">~6-9 litres</td>
+        </tr>
+        <tr style="border-bottom: 1px solid rgba(255,255,255,0.1);">
+          <td style="padding: 8px 0;">Washing machine</td>
+          <td style="text-align: right;">~50-65 litres</td>
+        </tr>
+        <tr style="border-bottom: 1px solid rgba(255,255,255,0.1);">
+          <td style="padding: 8px 0;">Dishwasher</td>
+          <td style="text-align: right;">~10-20 litres</td>
+        </tr>
+        <tr>
+          <td style="padding: 8px 0;">Garden hose (10 mins)</td>
+          <td style="text-align: right;">~150 litres</td>
+        </tr>
+      </table>
+    </div>
+  </div>
+
   <button class="refresh-btn" id="refreshBtn" onclick="manualRefresh()">Refresh</button>
 
   <script>
@@ -853,6 +937,7 @@
       if (tabName === 'analysis') loadAnalysis();
       if (tabName === 'data') loadDbInfo();
       if (tabName === 'energy') loadEnergyData();
+      if (tabName === 'water') loadWaterData();
     }
 
     function getTemperatureClass(temp) {
@@ -1740,6 +1825,127 @@
         await loadEnergyData();
       } catch (error) {
         console.error('Error polling energy:', error);
+      }
+    }
+
+    // Water chart
+    let waterChart = null;
+
+    async function loadWaterData() {
+      const days = parseInt(document.getElementById('waterDays').value);
+
+      try {
+        const [summaryRes, dailyRes] = await Promise.all([
+          fetch('/api/water/summary'),
+          fetch(`/api/water/daily?days=${days}`)
+        ]);
+
+        const summary = await summaryRes.json();
+        const daily = await dailyRes.json();
+
+        // Check if we have data
+        const hasData = daily.length > 0;
+        document.getElementById('waterNoData').style.display = hasData ? 'none' : 'block';
+
+        // Update stats
+        updateWaterStats(summary, daily);
+
+        // Render chart
+        if (hasData) {
+          renderWaterChart(daily);
+        }
+
+      } catch (error) {
+        console.error('Error loading water data:', error);
+        document.getElementById('waterNoData').style.display = 'block';
+      }
+    }
+
+    function updateWaterStats(summary, daily) {
+      document.getElementById('waterYesterday').textContent =
+        summary.yesterday_litres ? summary.yesterday_litres : '--';
+      document.getElementById('waterAvg').textContent =
+        summary.avg_daily_litres ? summary.avg_daily_litres : '--';
+      document.getElementById('waterWeek').textContent =
+        summary.week_litres ? summary.week_litres : '--';
+      document.getElementById('waterMonth').textContent =
+        summary.month_litres ? summary.month_litres : '--';
+    }
+
+    function renderWaterChart(data) {
+      const ctx = document.getElementById('waterChart').getContext('2d');
+
+      if (waterChart) waterChart.destroy();
+
+      const labels = data.map(d => {
+        const date = new Date(d.reading_date);
+        return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+      });
+
+      const litres = data.map(d => d.consumption_litres);
+
+      // Calculate average for reference line
+      const avgLitres = litres.reduce((a, b) => a + b, 0) / litres.length;
+
+      waterChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: labels,
+          datasets: [{
+            label: 'Litres',
+            data: litres,
+            backgroundColor: 'rgba(33, 150, 243, 0.7)',
+            borderColor: '#2196f3',
+            borderWidth: 1
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            annotation: {
+              annotations: {
+                averageLine: {
+                  type: 'line',
+                  yMin: avgLitres,
+                  yMax: avgLitres,
+                  borderColor: 'rgba(255, 255, 255, 0.5)',
+                  borderWidth: 2,
+                  borderDash: [5, 5],
+                  label: {
+                    display: true,
+                    content: `Avg: ${Math.round(avgLitres)}L`,
+                    position: 'end'
+                  }
+                }
+              }
+            }
+          },
+          scales: {
+            x: {
+              grid: { color: 'rgba(255,255,255,0.1)' },
+              ticks: { color: '#888' }
+            },
+            y: {
+              grid: { color: 'rgba(255,255,255,0.1)' },
+              ticks: {
+                color: '#888',
+                callback: v => v + ' L'
+              },
+              beginAtZero: true
+            }
+          }
+        }
+      });
+    }
+
+    async function pollWater() {
+      try {
+        await fetch('/api/water/poll');
+        await loadWaterData();
+      } catch (error) {
+        console.error('Error polling water:', error);
       }
     }
 
