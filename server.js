@@ -330,7 +330,8 @@ function authenticateSevernTrent() {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Content-Length': Buffer.byteLength(postData)
+        'Content-Length': Buffer.byteLength(postData),
+        'User-Agent': 'SmartHomeDashboard/1.0'
       }
     };
 
@@ -338,6 +339,10 @@ function authenticateSevernTrent() {
       let data = '';
       res.on('data', chunk => data += chunk);
       res.on('end', () => {
+        console.log(`[SevernTrent] Auth response status: ${res.statusCode}, content-type: ${res.headers['content-type']}`);
+        if (res.statusCode !== 200) {
+          console.log('[SevernTrent] Non-200 response:', data.slice(0, 200));
+        }
         try {
           const result = JSON.parse(data);
           if (result.data && result.data.obtainKrakenToken && result.data.obtainKrakenToken.token) {
@@ -348,10 +353,11 @@ function authenticateSevernTrent() {
             resolve(stToken);
           } else {
             const error = result.errors ? result.errors[0].message : 'Authentication failed';
-            console.error('[SevernTrent] Auth error:', error);
+            console.error('[SevernTrent] Auth error:', error, JSON.stringify(result).slice(0, 200));
             reject(new Error(error));
           }
         } catch (e) {
+          console.error('[SevernTrent] Parse error, raw response:', data.slice(0, 300));
           reject(e);
         }
       });
@@ -398,7 +404,8 @@ function fetchSevernTrentAccountNumber(token) {
       headers: {
         'Content-Type': 'application/json',
         'Authorization': token,
-        'Content-Length': Buffer.byteLength(postData)
+        'Content-Length': Buffer.byteLength(postData),
+        'User-Agent': 'SmartHomeDashboard/1.0'
       }
     };
 
@@ -482,7 +489,8 @@ function fetchSevernTrentReadings(token, accountNumber, startDate, endDate) {
       headers: {
         'Content-Type': 'application/json',
         'Authorization': token,
-        'Content-Length': Buffer.byteLength(postData)
+        'Content-Length': Buffer.byteLength(postData),
+        'User-Agent': 'SmartHomeDashboard/1.0'
       }
     };
 
@@ -2082,12 +2090,12 @@ app.listen(PORT, '0.0.0.0', () => {
   // Initial polls
   pollEcowitt();
   pollBright();
-  pollSevernTrent(); // Water data - may fail if credentials invalid
+  // pollSevernTrent(); // Disabled - Severn Trent now uses passwordless auth, use manual meter entries instead
 
   // Schedule regular polling
   setInterval(pollEcowitt, POLL_INTERVAL); // Every 5 minutes
   setInterval(pollBright, 4 * 60 * 60 * 1000); // Every 4 hours (data updates daily)
-  setInterval(pollSevernTrent, 24 * 60 * 60 * 1000); // Every 24 hours (water data delayed by ~1 day)
+  // setInterval(pollSevernTrent, 24 * 60 * 60 * 1000); // Disabled - use manual meter entries
 });
 
 // Graceful shutdown
