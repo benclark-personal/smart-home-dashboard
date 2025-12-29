@@ -106,14 +106,30 @@ db.exec(`
 
   CREATE TABLE IF NOT EXISTS meter_readings (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    reading_date DATE NOT NULL UNIQUE,
+    reading_date DATE NOT NULL,
+    reading_time TIME,
+    reading_datetime DATETIME,
     meter_value_m3 REAL NOT NULL,
     meter_serial TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(reading_date, reading_time)
   );
 
   CREATE INDEX IF NOT EXISTS idx_meter_date ON meter_readings(reading_date);
 `);
+
+// Migration: add new columns to meter_readings if they don't exist
+try {
+  db.exec(`ALTER TABLE meter_readings ADD COLUMN reading_time TIME`);
+} catch (e) { /* column already exists */ }
+
+try {
+  db.exec(`ALTER TABLE meter_readings ADD COLUMN reading_datetime DATETIME`);
+} catch (e) { /* column already exists */ }
+
+try {
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_meter_datetime ON meter_readings(reading_datetime)`);
+} catch (e) { /* index already exists */ }
 
 // Convert Fahrenheit to Celsius
 function fahrenheitToCelsius(f) {
@@ -1943,7 +1959,7 @@ app.post('/api/water/billing-period', async (req, res) => {
 // Meter reading entry - enter cumulative meter value, calculates consumption from previous
 app.post('/api/water/meter-reading', async (req, res) => {
   try {
-    const { date, meterValue } = req.body;
+    const { date, time, meterValue } = req.body;
 
     if (!date || meterValue === undefined) {
       return res.status(400).json({ success: false, error: 'Date and meter value required' });
@@ -1954,37 +1970,46 @@ app.post('/api/water/meter-reading', async (req, res) => {
       return res.status(400).json({ success: false, error: 'Invalid meter value' });
     }
 
+    // Build datetime from date and optional time (default to current time if not provided)
+    const readingTime = time || new Date().toTimeString().slice(0, 5);
+    const readingDatetime = `${date}T${readingTime}:00`;
+
     // Get previous meter reading
     const previous = db.prepare(`
-      SELECT reading_date, meter_value_m3
+      SELECT reading_date, reading_time, reading_datetime, meter_value_m3
       FROM meter_readings
-      WHERE reading_date < ?
-      ORDER BY reading_date DESC
+      WHERE reading_datetime < ?
+      ORDER BY reading_datetime DESC
       LIMIT 1
-    `).get(date);
+    `).get(readingDatetime);
 
     // Store the new meter reading
     db.prepare(`
-      INSERT OR REPLACE INTO meter_readings (reading_date, meter_value_m3, meter_serial)
-      VALUES (?, ?, ?)
-    `).run(date, meterM3, SEVERN_TRENT_CONFIG.meterSerial);
+      INSERT OR REPLACE INTO meter_readings (reading_date, reading_time, reading_datetime, meter_value_m3, meter_serial)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(date, readingTime, readingDatetime, meterM3, SEVERN_TRENT_CONFIG.meterSerial);
 
     let consumption = null;
+    let hours = null;
     let days = null;
     let avgDailyLitres = null;
+    let litresPerHour = null;
 
     if (previous) {
-      // Calculate consumption between readings
+      // Calculate consumption between readings using actual hours
       consumption = meterM3 - previous.meter_value_m3;
-      const prevDate = new Date(previous.reading_date);
-      const newDate = new Date(date);
-      days = Math.ceil((newDate - prevDate) / (1000 * 60 * 60 * 24));
+      const prevDatetime = new Date(previous.reading_datetime);
+      const newDatetime = new Date(readingDatetime);
+      hours = (newDatetime - prevDatetime) / (1000 * 60 * 60);
+      days = hours / 24;
 
-      if (days > 0 && consumption >= 0) {
+      if (hours > 0 && consumption >= 0) {
+        litresPerHour = (consumption * 1000) / hours;
+        avgDailyLitres = Math.round(litresPerHour * 24);
         const dailyM3 = consumption / days;
-        avgDailyLitres = Math.round(dailyM3 * 1000);
 
         // Create water_readings entries for each day in the period
+        // For partial days, we'll still create one entry per day but log the actual rate
         const insertStmt = db.prepare(`
           INSERT OR REPLACE INTO water_readings (timestamp, reading_date, consumption_m3, reading_type, meter_serial)
           VALUES (?, ?, ?, 'meter', ?)
@@ -1992,9 +2017,11 @@ app.post('/api/water/meter-reading', async (req, res) => {
 
         const readings = [];
         const insertMany = db.transaction(() => {
-          const currentDate = new Date(prevDate);
-          currentDate.setDate(currentDate.getDate() + 1); // Start day after previous reading
-          while (currentDate <= newDate) {
+          const currentDate = new Date(prevDatetime);
+          currentDate.setDate(currentDate.getDate() + 1);
+          currentDate.setHours(0, 0, 0, 0);
+
+          while (currentDate <= newDatetime) {
             const dateStr = currentDate.toISOString().slice(0, 10);
             const timestamp = new Date(dateStr + 'T12:00:00Z').toISOString();
 
@@ -2013,7 +2040,7 @@ app.post('/api/water/meter-reading', async (req, res) => {
         });
 
         insertMany();
-        console.log(`[Water] Meter reading: ${previous.meter_value_m3} -> ${meterM3} m³ = ${consumption} m³ over ${days} days (${avgDailyLitres} L/day)`);
+        console.log(`[Water] Meter reading: ${previous.meter_value_m3} -> ${meterM3} m³ = ${(consumption * 1000).toFixed(0)}L over ${hours.toFixed(1)}h (${avgDailyLitres} L/day)`);
 
         // Sync to Supabase
         if (readings.length > 0) {
@@ -2021,17 +2048,26 @@ app.post('/api/water/meter-reading', async (req, res) => {
         }
       }
     } else {
-      console.log(`[Water] First meter reading recorded: ${meterM3} m³ on ${date}`);
+      console.log(`[Water] First meter reading recorded: ${meterM3} m³ on ${date} at ${readingTime}`);
     }
 
     res.json({
       success: true,
       meterValue: meterM3,
       date: date,
-      previousReading: previous ? { date: previous.reading_date, value: previous.meter_value_m3 } : null,
+      time: readingTime,
+      datetime: readingDatetime,
+      previousReading: previous ? {
+        date: previous.reading_date,
+        time: previous.reading_time,
+        value: previous.meter_value_m3
+      } : null,
       consumption: consumption,
-      days: days,
-      avgDailyLitres: avgDailyLitres
+      consumptionLitres: consumption ? Math.round(consumption * 1000) : null,
+      hours: hours ? Math.round(hours * 10) / 10 : null,
+      days: days ? Math.round(days * 10) / 10 : null,
+      avgDailyLitres: avgDailyLitres,
+      litresPerHour: litresPerHour ? Math.round(litresPerHour * 10) / 10 : null
     });
   } catch (error) {
     console.error('[Water] Meter reading error:', error.message);
@@ -2042,9 +2078,9 @@ app.post('/api/water/meter-reading', async (req, res) => {
 // Get all meter readings
 app.get('/api/water/meter-readings', (req, res) => {
   const readings = db.prepare(`
-    SELECT reading_date, meter_value_m3, meter_serial, created_at
+    SELECT reading_date, reading_time, reading_datetime, meter_value_m3, meter_serial, created_at
     FROM meter_readings
-    ORDER BY reading_date DESC
+    ORDER BY reading_datetime DESC
   `).all();
 
   res.json(readings);
