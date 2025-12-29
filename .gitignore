@@ -2,3 +2,4 @@ node_modules/
 readings.db
 *.log
 .DS_Store
+.env

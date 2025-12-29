@@ -7,42 +7,42 @@ const app = express();
 const PORT = 3001;
 const POLL_INTERVAL = 5 * 60 * 1000; // 5 minutes
 
-// Ecowitt API configuration
+// Ecowitt API configuration (from environment)
 const ECOWITT_CONFIG = {
-  applicationKey: '314CCC848B60F2A73B9AB052F986295D',
-  apiKey: 'f173d5a5-255c-42ec-b198-6e834019efab',
-  mac: 'BC:FF:4D:11:3D:18'
+  applicationKey: process.env.ECOWITT_APP_KEY,
+  apiKey: process.env.ECOWITT_API_KEY,
+  mac: process.env.ECOWITT_MAC || 'BC:FF:4D:11:3D:18'
 };
 
-// Supabase configuration for cloud backup
+// Supabase configuration for cloud backup (from environment)
 const SUPABASE_CONFIG = {
-  url: 'https://mtrjhzrzmqbahzipjisa.supabase.co',
-  serviceKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im10cmpoenJ6bXFiYWh6aXBqaXNhIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NjQ5NjQ5NSwiZXhwIjoyMDgyMDcyNDk1fQ.mRjXNMVJBF4uq-H4_KvxEmNuO98L8jaQ3JVYJM4J9BE'
+  url: process.env.SUPABASE_URL,
+  serviceKey: process.env.SUPABASE_SERVICE_KEY
 };
 
-// Hildebrand Bright API configuration (smart meter data)
+// Hildebrand Bright API configuration (from environment)
 const BRIGHT_CONFIG = {
-  username: 'benclark.mail@gmail.com',
-  password: 'Hello99&1',
-  applicationId: 'b0f1b774-a586-4f72-9edd-27ead8aa7a8d',
+  username: process.env.BRIGHT_EMAIL,
+  password: process.env.BRIGHT_PASSWORD,
+  applicationId: process.env.BRIGHT_APP_ID || 'b0f1b774-a586-4f72-9edd-27ead8aa7a8d',
   baseUrl: 'https://api.glowmarkt.com/api/v0-1',
   resources: {
-    electricityConsumption: 'd32d26bc-b8f8-4f43-b098-49aa174f6df7',
-    electricityCost: '2ee42fba-980f-426d-835e-ab1604491bb0',
-    gasConsumption: '695a8307-7f36-4a47-985d-761136c79028',
-    gasCost: '35d0e593-dada-4a2c-9fe7-d7321ac2fdf4'
+    electricityConsumption: process.env.BRIGHT_ELEC_CONSUMPTION_ID,
+    electricityCost: process.env.BRIGHT_ELEC_COST_ID,
+    gasConsumption: process.env.BRIGHT_GAS_CONSUMPTION_ID,
+    gasCost: process.env.BRIGHT_GAS_COST_ID
   }
 };
 
 let brightToken = null;
 let brightTokenExpiry = null;
 
-// Severn Trent Water API configuration (Kraken platform)
+// Severn Trent Water API configuration (from environment)
 const SEVERN_TRENT_CONFIG = {
-  email: process.env.SEVERN_TRENT_EMAIL || 'benclark.mail@gmail.com',
-  password: process.env.SEVERN_TRENT_PASSWORD || 'xra+aG9pK&xc%HS',
+  email: process.env.SEVERN_TRENT_EMAIL,
+  password: process.env.SEVERN_TRENT_PASSWORD,
   apiUrl: 'https://api.st.kraken.tech/v1/graphql/',
-  meterSerial: '16MA207763'
+  meterSerial: process.env.SEVERN_TRENT_METER || '16MA207763'
 };
 
 let stToken = null;
@@ -103,6 +103,16 @@ db.exec(`
   );
 
   CREATE INDEX IF NOT EXISTS idx_water_date ON water_readings(reading_date);
+
+  CREATE TABLE IF NOT EXISTS meter_readings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    reading_date DATE NOT NULL UNIQUE,
+    meter_value_m3 REAL NOT NULL,
+    meter_serial TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_meter_date ON meter_readings(reading_date);
 `);
 
 // Convert Fahrenheit to Celsius
@@ -1014,6 +1024,7 @@ async function pollEcowitt() {
 }
 
 // API endpoints
+app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
 app.get('/api/current', (req, res) => {
@@ -1580,15 +1591,13 @@ app.get('/api/water/summary', (req, res) => {
       SUM(CASE WHEN reading_date >= date('now', '-30 days') THEN consumption_m3 ELSE 0 END) as month_m3,
       AVG(CASE WHEN reading_date >= date('now', '-7 days') THEN consumption_m3 ELSE NULL END) as avg_daily_m3
     FROM water_readings
-    WHERE reading_type = 'smart'
   `).get();
 
   // Get yesterday's reading
   const yesterday = db.prepare(`
     SELECT consumption_m3
     FROM water_readings
-    WHERE reading_type = 'smart'
-      AND reading_date = date('now', '-1 day')
+    WHERE reading_date = date('now', '-1 day')
   `).get();
 
   res.json({
@@ -1611,10 +1620,10 @@ app.get('/api/water/daily', (req, res) => {
     SELECT
       reading_date,
       consumption_m3,
-      ROUND(consumption_m3 * 1000) as consumption_litres
+      ROUND(consumption_m3 * 1000) as consumption_litres,
+      reading_type
     FROM water_readings
-    WHERE reading_type = 'smart'
-      AND reading_date >= date('now', '-' || ? || ' days')
+    WHERE reading_date >= date('now', '-' || ? || ' days')
     ORDER BY reading_date ASC
   `).all(days);
 
@@ -1639,6 +1648,88 @@ app.get('/api/water/history', (req, res) => {
 
   res.json(readings);
 });
+
+// Get water data aggregated by billing periods
+app.get('/api/water/periods', (req, res) => {
+  const days = parseInt(req.query.days) || 365;
+
+  const readings = db.prepare(`
+    SELECT
+      reading_date,
+      consumption_m3,
+      reading_type
+    FROM water_readings
+    WHERE reading_date >= date('now', '-' || ? || ' days')
+    ORDER BY reading_date ASC
+  `).all(days);
+
+  if (readings.length === 0) {
+    return res.json([]);
+  }
+
+  // Group consecutive days with same consumption_m3 into periods
+  const periods = [];
+  let currentPeriod = null;
+
+  for (const reading of readings) {
+    const dailyM3 = Math.round(reading.consumption_m3 * 1000000) / 1000000; // Round for comparison
+
+    if (!currentPeriod || Math.abs(currentPeriod.dailyM3 - dailyM3) > 0.0001) {
+      // Start new period
+      if (currentPeriod) {
+        periods.push(currentPeriod);
+      }
+      currentPeriod = {
+        startDate: reading.reading_date,
+        endDate: reading.reading_date,
+        dailyM3: dailyM3,
+        days: 1,
+        totalM3: dailyM3,
+        readingType: reading.reading_type
+      };
+    } else {
+      // Extend current period
+      currentPeriod.endDate = reading.reading_date;
+      currentPeriod.days++;
+      currentPeriod.totalM3 = currentPeriod.dailyM3 * currentPeriod.days;
+    }
+  }
+
+  // Don't forget last period
+  if (currentPeriod) {
+    periods.push(currentPeriod);
+  }
+
+  // Calculate totals and format output
+  const formatted = periods.map(p => ({
+    startDate: p.startDate,
+    endDate: p.endDate,
+    days: p.days,
+    totalM3: Math.round(p.totalM3 * 100) / 100,
+    totalLitres: Math.round(p.totalM3 * 1000),
+    avgDailyLitres: Math.round(p.dailyM3 * 1000),
+    readingType: p.readingType,
+    label: formatPeriodLabel(p.startDate, p.endDate)
+  }));
+
+  res.json(formatted);
+});
+
+// Format period label (e.g., "Mar-Sep 2024")
+function formatPeriodLabel(startDate, endDate) {
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+  const startMonth = start.toLocaleDateString('en-GB', { month: 'short' });
+  const endMonth = end.toLocaleDateString('en-GB', { month: 'short' });
+  const startYear = start.getFullYear();
+  const endYear = end.getFullYear();
+
+  if (startYear === endYear) {
+    return `${startMonth}-${endMonth} ${startYear}`;
+  } else {
+    return `${startMonth} ${startYear}-${endMonth} ${endYear}`;
+  }
+}
 
 // Manual trigger for water poll
 app.get('/api/water/poll', async (req, res) => {
@@ -1704,6 +1795,284 @@ app.get('/api/water/backfill', async (req, res) => {
     console.error('[SevernTrent] Backfill error:', error.message);
     res.status(500).json({ success: false, error: error.message });
   }
+});
+
+// Manual water entry endpoint
+app.post('/api/water/manual', async (req, res) => {
+  try {
+    const { readings } = req.body;
+
+    if (!readings || !Array.isArray(readings) || readings.length === 0) {
+      return res.status(400).json({ success: false, error: 'No readings provided' });
+    }
+
+    const insertStmt = db.prepare(`
+      INSERT OR REPLACE INTO water_readings (timestamp, reading_date, consumption_m3, reading_type, meter_serial)
+      VALUES (?, ?, ?, 'manual', ?)
+    `);
+
+    let count = 0;
+    const insertMany = db.transaction((items) => {
+      for (const r of items) {
+        if (!r.date || r.litres === undefined) continue;
+
+        const litres = parseFloat(r.litres);
+        if (isNaN(litres) || litres < 0) continue;
+
+        const m3 = litres / 1000;
+        const timestamp = new Date(r.date + 'T12:00:00Z').toISOString();
+
+        insertStmt.run(timestamp, r.date, m3, SEVERN_TRENT_CONFIG.meterSerial);
+        count++;
+      }
+    });
+
+    insertMany(readings);
+    console.log(`[Water] Manual entry: stored ${count} readings`);
+
+    // Sync to Supabase
+    const supabaseReadings = readings
+      .filter(r => r.date && !isNaN(parseFloat(r.litres)))
+      .map(r => ({
+        timestamp: new Date(r.date + 'T12:00:00Z').toISOString(),
+        reading_date: r.date,
+        consumption_m3: parseFloat(r.litres) / 1000,
+        reading_type: 'manual',
+        meter_serial: SEVERN_TRENT_CONFIG.meterSerial
+      }));
+
+    let supabaseSynced = false;
+    if (supabaseReadings.length > 0) {
+      supabaseSynced = await syncWaterToSupabase(supabaseReadings);
+    }
+
+    res.json({
+      success: true,
+      readingsStored: count,
+      supabaseSynced
+    });
+  } catch (error) {
+    console.error('[Water] Manual entry error:', error.message);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Billing period import - distribute total usage across date range
+app.post('/api/water/billing-period', async (req, res) => {
+  try {
+    const { startDate, endDate, totalM3 } = req.body;
+
+    if (!startDate || !endDate || totalM3 === undefined) {
+      return res.status(400).json({ success: false, error: 'Missing required fields' });
+    }
+
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    const days = Math.ceil((end - start) / (1000 * 60 * 60 * 24));
+
+    if (days <= 0) {
+      return res.status(400).json({ success: false, error: 'End date must be after start date' });
+    }
+
+    const dailyM3 = parseFloat(totalM3) / days;
+    const dailyLitres = dailyM3 * 1000;
+
+    console.log(`[Water] Billing period import: ${startDate} to ${endDate}, ${totalM3} m3 over ${days} days = ${dailyLitres.toFixed(1)} L/day`);
+
+    const insertStmt = db.prepare(`
+      INSERT OR REPLACE INTO water_readings (timestamp, reading_date, consumption_m3, reading_type, meter_serial)
+      VALUES (?, ?, ?, 'billing', ?)
+    `);
+
+    const readings = [];
+    let count = 0;
+
+    // Create a reading for each day in the period
+    const insertMany = db.transaction(() => {
+      const currentDate = new Date(start);
+      while (currentDate < end) {
+        const dateStr = currentDate.toISOString().slice(0, 10);
+        const timestamp = new Date(dateStr + 'T12:00:00Z').toISOString();
+
+        insertStmt.run(timestamp, dateStr, dailyM3, SEVERN_TRENT_CONFIG.meterSerial);
+
+        readings.push({
+          timestamp,
+          reading_date: dateStr,
+          consumption_m3: dailyM3,
+          reading_type: 'billing',
+          meter_serial: SEVERN_TRENT_CONFIG.meterSerial
+        });
+
+        count++;
+        currentDate.setDate(currentDate.getDate() + 1);
+      }
+    });
+
+    insertMany();
+    console.log(`[Water] Billing period: stored ${count} daily readings`);
+
+    // Sync to Supabase
+    let supabaseSynced = false;
+    if (readings.length > 0) {
+      supabaseSynced = await syncWaterToSupabase(readings);
+    }
+
+    res.json({
+      success: true,
+      daysCreated: count,
+      dailyM3: dailyM3,
+      dailyLitres: dailyLitres,
+      totalM3: parseFloat(totalM3),
+      supabaseSynced
+    });
+  } catch (error) {
+    console.error('[Water] Billing period import error:', error.message);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Meter reading entry - enter cumulative meter value, calculates consumption from previous
+app.post('/api/water/meter-reading', async (req, res) => {
+  try {
+    const { date, meterValue } = req.body;
+
+    if (!date || meterValue === undefined) {
+      return res.status(400).json({ success: false, error: 'Date and meter value required' });
+    }
+
+    const meterM3 = parseFloat(meterValue);
+    if (isNaN(meterM3) || meterM3 < 0) {
+      return res.status(400).json({ success: false, error: 'Invalid meter value' });
+    }
+
+    // Get previous meter reading
+    const previous = db.prepare(`
+      SELECT reading_date, meter_value_m3
+      FROM meter_readings
+      WHERE reading_date < ?
+      ORDER BY reading_date DESC
+      LIMIT 1
+    `).get(date);
+
+    // Store the new meter reading
+    db.prepare(`
+      INSERT OR REPLACE INTO meter_readings (reading_date, meter_value_m3, meter_serial)
+      VALUES (?, ?, ?)
+    `).run(date, meterM3, SEVERN_TRENT_CONFIG.meterSerial);
+
+    let consumption = null;
+    let days = null;
+    let avgDailyLitres = null;
+
+    if (previous) {
+      // Calculate consumption between readings
+      consumption = meterM3 - previous.meter_value_m3;
+      const prevDate = new Date(previous.reading_date);
+      const newDate = new Date(date);
+      days = Math.ceil((newDate - prevDate) / (1000 * 60 * 60 * 24));
+
+      if (days > 0 && consumption >= 0) {
+        const dailyM3 = consumption / days;
+        avgDailyLitres = Math.round(dailyM3 * 1000);
+
+        // Create water_readings entries for each day in the period
+        const insertStmt = db.prepare(`
+          INSERT OR REPLACE INTO water_readings (timestamp, reading_date, consumption_m3, reading_type, meter_serial)
+          VALUES (?, ?, ?, 'meter', ?)
+        `);
+
+        const readings = [];
+        const insertMany = db.transaction(() => {
+          const currentDate = new Date(prevDate);
+          currentDate.setDate(currentDate.getDate() + 1); // Start day after previous reading
+          while (currentDate <= newDate) {
+            const dateStr = currentDate.toISOString().slice(0, 10);
+            const timestamp = new Date(dateStr + 'T12:00:00Z').toISOString();
+
+            insertStmt.run(timestamp, dateStr, dailyM3, SEVERN_TRENT_CONFIG.meterSerial);
+
+            readings.push({
+              timestamp,
+              reading_date: dateStr,
+              consumption_m3: dailyM3,
+              reading_type: 'meter',
+              meter_serial: SEVERN_TRENT_CONFIG.meterSerial
+            });
+
+            currentDate.setDate(currentDate.getDate() + 1);
+          }
+        });
+
+        insertMany();
+        console.log(`[Water] Meter reading: ${previous.meter_value_m3} -> ${meterM3} m³ = ${consumption} m³ over ${days} days (${avgDailyLitres} L/day)`);
+
+        // Sync to Supabase
+        if (readings.length > 0) {
+          await syncWaterToSupabase(readings);
+        }
+      }
+    } else {
+      console.log(`[Water] First meter reading recorded: ${meterM3} m³ on ${date}`);
+    }
+
+    res.json({
+      success: true,
+      meterValue: meterM3,
+      date: date,
+      previousReading: previous ? { date: previous.reading_date, value: previous.meter_value_m3 } : null,
+      consumption: consumption,
+      days: days,
+      avgDailyLitres: avgDailyLitres
+    });
+  } catch (error) {
+    console.error('[Water] Meter reading error:', error.message);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Get all meter readings
+app.get('/api/water/meter-readings', (req, res) => {
+  const readings = db.prepare(`
+    SELECT reading_date, meter_value_m3, meter_serial, created_at
+    FROM meter_readings
+    ORDER BY reading_date DESC
+  `).all();
+
+  res.json(readings);
+});
+
+// Delete water readings before a date
+app.delete('/api/water/before/:date', (req, res) => {
+  const date = req.params.date;
+
+  const countBefore = db.prepare(`SELECT COUNT(*) as count FROM water_readings WHERE reading_date < ?`).get(date);
+
+  const result = db.prepare(`DELETE FROM water_readings WHERE reading_date < ?`).run(date);
+
+  console.log(`[Water] Deleted ${result.changes} readings before ${date}`);
+
+  res.json({
+    success: true,
+    deleted: result.changes,
+    date: date
+  });
+});
+
+// Delete water readings by date and type
+app.delete('/api/water/:date/:type', (req, res) => {
+  const { date, type } = req.params;
+
+  const result = db.prepare(`DELETE FROM water_readings WHERE reading_date = ? AND reading_type = ?`).run(date, type);
+
+  console.log(`[Water] Deleted ${result.changes} ${type} readings on ${date}`);
+
+  res.json({
+    success: true,
+    deleted: result.changes,
+    date: date,
+    type: type
+  });
 });
 
 // Start server
