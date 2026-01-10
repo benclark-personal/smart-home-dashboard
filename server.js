@@ -268,6 +268,19 @@ function fetchBrightReadings(resourceId, type, fromDate, toDate) {
   });
 }
 
+// Merge consumption and cost data by timestamp
+function mergeConsumptionAndCost(consumptionData, costData) {
+  const costMap = new Map();
+  for (const c of costData) {
+    costMap.set(c.timestamp, c.kwh); // kwh field contains pence for cost resources
+  }
+
+  return consumptionData.map(r => ({
+    ...r,
+    cost_pence: costMap.get(r.timestamp) || null
+  }));
+}
+
 // Poll Bright API for energy data
 async function pollBright() {
   try {
@@ -279,21 +292,31 @@ async function pollBright() {
     const fromDate = new Date(toDate);
     fromDate.setDate(fromDate.getDate() - 1); // Yesterday
 
-    // Fetch sequentially - Bright API doesn't handle concurrent requests well
-    const elecData = await fetchBrightReadings(BRIGHT_CONFIG.resources.electricityConsumption, 'electricity', fromDate, toDate);
-    const gasData = await fetchBrightReadings(BRIGHT_CONFIG.resources.gasConsumption, 'gas', fromDate, toDate);
+    // Fetch consumption and cost data sequentially - Bright API doesn't handle concurrent requests well
+    const elecConsumption = await fetchBrightReadings(BRIGHT_CONFIG.resources.electricityConsumption, 'electricity', fromDate, toDate);
+    const elecCost = BRIGHT_CONFIG.resources.electricityCost
+      ? await fetchBrightReadings(BRIGHT_CONFIG.resources.electricityCost, 'electricity_cost', fromDate, toDate)
+      : [];
+    const gasConsumption = await fetchBrightReadings(BRIGHT_CONFIG.resources.gasConsumption, 'gas', fromDate, toDate);
+    const gasCost = BRIGHT_CONFIG.resources.gasCost
+      ? await fetchBrightReadings(BRIGHT_CONFIG.resources.gasCost, 'gas_cost', fromDate, toDate)
+      : [];
+
+    // Merge consumption with cost data
+    const elecData = mergeConsumptionAndCost(elecConsumption, elecCost);
+    const gasData = mergeConsumptionAndCost(gasConsumption, gasCost);
 
     // Store in database (avoid duplicates)
     const insertStmt = db.prepare(`
       INSERT OR REPLACE INTO energy_readings (timestamp, type, kwh, cost_pence)
-      VALUES (?, ?, ?, NULL)
+      VALUES (?, ?, ?, ?)
     `);
 
     let count = 0;
     const insertMany = db.transaction((readings) => {
       for (const r of readings) {
         if (r.kwh > 0) {
-          insertStmt.run(r.timestamp, r.type, r.kwh);
+          insertStmt.run(r.timestamp, r.type, r.kwh, r.cost_pence);
           count++;
         }
       }
@@ -301,7 +324,7 @@ async function pollBright() {
 
     const allReadings = [...elecData, ...gasData];
     insertMany(allReadings);
-    console.log(`[Bright] Stored ${count} energy readings locally`);
+    console.log(`[Bright] Stored ${count} energy readings locally (with cost data)`);
 
     // Sync to Supabase cloud
     const validReadings = allReadings.filter(r => r.kwh > 0);
@@ -728,7 +751,7 @@ function syncEnergyToSupabase(readings) {
       timestamp: r.timestamp,
       type: r.type,
       kwh: r.kwh,
-      cost_pence: null
+      cost_pence: r.cost_pence || null
     }));
 
     const postData = JSON.stringify(supabaseReadings);
@@ -1401,7 +1424,7 @@ app.get('/api/energy/history', (req, res) => {
   const days = parseInt(req.query.days) || 7;
 
   const readings = db.prepare(`
-    SELECT timestamp, type, kwh
+    SELECT timestamp, type, kwh, cost_pence
     FROM energy_readings
     WHERE timestamp >= datetime('now', '-' || ? || ' days')
     GROUP BY timestamp, type
@@ -1420,9 +1443,10 @@ app.get('/api/energy/daily', (req, res) => {
       date(timestamp) as date,
       type,
       SUM(kwh) as total_kwh,
+      SUM(cost_pence) as total_cost_pence,
       COUNT(*) as readings
     FROM (
-      SELECT timestamp, type, kwh
+      SELECT timestamp, type, kwh, cost_pence
       FROM energy_readings
       WHERE timestamp >= datetime('now', '-' || ? || ' days')
       GROUP BY timestamp, type
@@ -1437,9 +1461,9 @@ app.get('/api/energy/daily', (req, res) => {
 // Get current energy status (deduplicated)
 app.get('/api/energy/current', (req, res) => {
   const today = db.prepare(`
-    SELECT type, SUM(kwh) as kwh
+    SELECT type, SUM(kwh) as kwh, SUM(cost_pence) as cost_pence
     FROM (
-      SELECT timestamp, type, kwh FROM energy_readings
+      SELECT timestamp, type, kwh, cost_pence FROM energy_readings
       WHERE date(timestamp) = date('now', '-1 day')
       GROUP BY timestamp, type
     )
@@ -1447,9 +1471,9 @@ app.get('/api/energy/current', (req, res) => {
   `).all();
 
   const week = db.prepare(`
-    SELECT type, SUM(kwh) as kwh
+    SELECT type, SUM(kwh) as kwh, SUM(cost_pence) as cost_pence
     FROM (
-      SELECT timestamp, type, kwh FROM energy_readings
+      SELECT timestamp, type, kwh, cost_pence FROM energy_readings
       WHERE timestamp >= datetime('now', '-7 days')
       GROUP BY timestamp, type
     )
@@ -1457,8 +1481,8 @@ app.get('/api/energy/current', (req, res) => {
   `).all();
 
   res.json({
-    yesterday: today.reduce((acc, r) => { acc[r.type] = r.kwh; return acc; }, {}),
-    lastWeek: week.reduce((acc, r) => { acc[r.type] = r.kwh; return acc; }, {})
+    yesterday: today.reduce((acc, r) => { acc[r.type] = r.kwh; acc[r.type + '_cost'] = r.cost_pence; return acc; }, {}),
+    lastWeek: week.reduce((acc, r) => { acc[r.type] = r.kwh; acc[r.type + '_cost'] = r.cost_pence; return acc; }, {})
   });
 });
 
@@ -1476,7 +1500,7 @@ app.get('/api/energy/backfill', async (req, res) => {
   const chunkSize = 10; // API seems to have ~10 day limit per request
 
   try {
-    console.log(`[Bright] Backfilling ${actualDays} days of energy data in ${chunkSize}-day chunks...`);
+    console.log(`[Bright] Backfilling ${actualDays} days of energy data (with costs) in ${chunkSize}-day chunks...`);
 
     const chunks = [];
     let totalElec = 0;
@@ -1490,7 +1514,7 @@ app.get('/api/energy/backfill', async (req, res) => {
 
     const insertStmt = db.prepare(`
       INSERT OR REPLACE INTO energy_readings (timestamp, type, kwh, cost_pence)
-      VALUES (?, ?, ?, NULL)
+      VALUES (?, ?, ?, ?)
     `);
 
     // Loop backwards in chunks
@@ -1503,9 +1527,19 @@ app.get('/api/energy/backfill', async (req, res) => {
       console.log(`[Bright] Fetching chunk: ${chunkStart.toISOString().slice(0,10)} to ${chunkEnd.toISOString().slice(0,10)}`);
 
       try {
-        // Fetch sequentially - Bright API doesn't handle concurrent requests well
-        const elecData = await fetchBrightReadings(BRIGHT_CONFIG.resources.electricityConsumption, 'electricity', chunkStart, chunkEnd);
-        const gasData = await fetchBrightReadings(BRIGHT_CONFIG.resources.gasConsumption, 'gas', chunkStart, chunkEnd);
+        // Fetch consumption and cost data sequentially - Bright API doesn't handle concurrent requests well
+        const elecConsumption = await fetchBrightReadings(BRIGHT_CONFIG.resources.electricityConsumption, 'electricity', chunkStart, chunkEnd);
+        const elecCost = BRIGHT_CONFIG.resources.electricityCost
+          ? await fetchBrightReadings(BRIGHT_CONFIG.resources.electricityCost, 'electricity_cost', chunkStart, chunkEnd)
+          : [];
+        const gasConsumption = await fetchBrightReadings(BRIGHT_CONFIG.resources.gasConsumption, 'gas', chunkStart, chunkEnd);
+        const gasCost = BRIGHT_CONFIG.resources.gasCost
+          ? await fetchBrightReadings(BRIGHT_CONFIG.resources.gasCost, 'gas_cost', chunkStart, chunkEnd)
+          : [];
+
+        // Merge consumption with cost data
+        const elecData = mergeConsumptionAndCost(elecConsumption, elecCost);
+        const gasData = mergeConsumptionAndCost(gasConsumption, gasCost);
 
         // Store in local SQLite
         let chunkCount = 0;
@@ -1513,7 +1547,7 @@ app.get('/api/energy/backfill', async (req, res) => {
         const insertMany = db.transaction((readings) => {
           for (const r of readings) {
             if (r.kwh > 0) {
-              insertStmt.run(r.timestamp, r.type, r.kwh);
+              insertStmt.run(r.timestamp, r.type, r.kwh, r.cost_pence);
               chunkCount++;
             }
           }
@@ -1529,6 +1563,8 @@ app.get('/api/energy/backfill', async (req, res) => {
           to: chunkEnd.toISOString().slice(0, 10),
           elec: elecData.length,
           gas: gasData.length,
+          elecCost: elecCost.length,
+          gasCost: gasCost.length,
           stored: chunkCount
         });
 
@@ -1536,7 +1572,7 @@ app.get('/api/energy/backfill', async (req, res) => {
         totalGas += gasData.length;
         totalStored += chunkCount;
 
-        console.log(`[Bright] Chunk complete: ${elecData.length} elec, ${gasData.length} gas readings`);
+        console.log(`[Bright] Chunk complete: ${elecData.length} elec, ${gasData.length} gas readings (with ${elecCost.length}/${gasCost.length} cost entries)`);
       } catch (chunkError) {
         console.error(`[Bright] Chunk error (${chunkStart.toISOString().slice(0,10)}):`, chunkError.message);
         chunks.push({

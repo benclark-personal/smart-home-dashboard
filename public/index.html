@@ -1573,14 +1573,44 @@
       const gasWeek = currentData.lastWeek?.gas || 0;
       const elecWeek = currentData.lastWeek?.electricity || 0;
 
-      // Rough cost calculation (adjust rates as needed)
-      const gasRate = 6.24; // pence per kWh
-      const elecRate = 24.50; // pence per kWh
-      const standingGas = 31.43; // pence per day
-      const standingElec = 53.35; // pence per day
+      // Get actual costs from API if available (in pence)
+      const gasYesterdayCost = currentData.yesterday?.gas_cost || 0;
+      const elecYesterdayCost = currentData.yesterday?.electricity_cost || 0;
+      const gasWeekCost = currentData.lastWeek?.gas_cost || 0;
+      const elecWeekCost = currentData.lastWeek?.electricity_cost || 0;
 
-      const yesterdayCost = (gasYesterday * gasRate + elecYesterday * elecRate + standingGas + standingElec) / 100;
-      const weekCost = (gasWeek * gasRate + elecWeek * elecRate + (standingGas + standingElec) * 7) / 100;
+      // Tariff history (for reference when analysing costs):
+      // Before 05 Sept 2025: Next Secure Fixed 12m v18 (Elec: 24.106p, Gas: 6.025p, Standing: 68.624p + 35.208p)
+      // 05 Sept 2025 - 10 Jan 2026: Variable (Elec: 28.483p, Gas: 6.164p, Standing: 62.226p + 42.915p)
+      // 10 Jan 2026 onwards: Next Gust 12m (Elec: 25.33p, Gas: 6.03p, Standing: 61.07p + 41.76p)
+
+      // Standing charges (pence per day) - still needed for total cost
+      const standingGas = 41.76;  // Next Gust 12m
+      const standingElec = 61.07; // Next Gust 12m
+      const dailyStanding = standingGas + standingElec;
+
+      // Use actual API costs if available, otherwise fall back to calculation
+      const hasYesterdayCosts = gasYesterdayCost > 0 || elecYesterdayCost > 0;
+      const hasWeekCosts = gasWeekCost > 0 || elecWeekCost > 0;
+
+      // Fallback rates for calculation if API costs not available (Next Gust 12m)
+      const gasRate = 6.03;
+      const elecRate = 25.33;
+
+      let yesterdayCost, weekCost;
+      if (hasYesterdayCosts) {
+        // Use actual costs from smart meter + standing charges
+        yesterdayCost = (gasYesterdayCost + elecYesterdayCost + dailyStanding) / 100;
+      } else {
+        yesterdayCost = (gasYesterday * gasRate + elecYesterday * elecRate + dailyStanding) / 100;
+      }
+
+      if (hasWeekCosts) {
+        weekCost = (gasWeekCost + elecWeekCost + (dailyStanding * 7)) / 100;
+      } else {
+        weekCost = (gasWeek * gasRate + elecWeek * elecRate + (dailyStanding * 7)) / 100;
+      }
+
       const avgDaily = weekCost / 7;
 
       document.getElementById('energyYesterday').textContent = gasYesterday > 0 ? `£${yesterdayCost.toFixed(2)}` : '--';
