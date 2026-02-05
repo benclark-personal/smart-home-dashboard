@@ -28,9 +28,10 @@ A comprehensive home temperature and humidity monitoring system built on Raspber
 - **Battery:** 2x AA (0 = OK, 1 = Low)
 
 ### Display System
-- **Model:** Raspberry Pi 4
-- **IP Address:** 192.168.1.119
-- **Login:** root / holymoly10
+- **Model:** Raspberry Pi 4 (DietPi)
+- **IP Address:** 192.168.0.145
+- **Hostname:** DietPi
+- **Login:** root / holymoly10 (or dietpi / holymoly10)
 - **Display:** Connected monitor running Chromium in kiosk mode
 - **Dashboard URL:** http://localhost:3001
 
@@ -177,20 +178,20 @@ const ROOM_COLOURS = {
 **API Endpoints:**
 ```bash
 # Get energy history (last 7 days)
-curl "http://192.168.1.119:3001/api/energy/history?days=7"
+curl "http://192.168.0.145:3001/api/energy/history?days=7"
 
 # Get daily totals
-curl "http://192.168.1.119:3001/api/energy/daily?days=7"
+curl "http://192.168.0.145:3001/api/energy/daily?days=7"
 
 # Get current status (yesterday's total + weekly total)
-curl "http://192.168.1.119:3001/api/energy/current"
+curl "http://192.168.0.145:3001/api/energy/current"
 
 # Manual poll trigger
-curl "http://192.168.1.119:3001/api/energy/poll"
+curl "http://192.168.0.145:3001/api/energy/poll"
 
 # Historical backfill (fetches in 10-day chunks, syncs to Supabase)
-curl "http://192.168.1.119:3001/api/energy/backfill?days=60"   # 60 days
-curl "http://192.168.1.119:3001/api/energy/backfill?days=400"  # Max ~13 months
+curl "http://192.168.0.145:3001/api/energy/backfill?days=60"   # 60 days
+curl "http://192.168.0.145:3001/api/energy/backfill?days=400"  # Max ~13 months
 ```
 
 **Historical Data Notes:**
@@ -341,6 +342,36 @@ curl "http://192.168.1.119:3001/api/energy/backfill?days=400"  # Max ~13 months
 
 ---
 
+## System Changes
+
+### New Boiler Installation (04/02/2026)
+- **Date:** 04 February 2026
+- **Change:** Old boiler replaced with new boiler
+- **Impact on Analysis:**
+  - Energy usage data before this date reflects old boiler performance
+  - Data from 04/02/2026 onwards reflects new boiler efficiency
+  - Compare gas consumption before/after to measure efficiency improvements
+  - Warm-up rates may improve with new boiler
+  - Consider this date as a key boundary when running analysis comparisons
+
+### Immersion Heater Usage (Late Dec 2024 - 04/02/2026)
+- **Period:** Late December 2024 to 04 February 2026
+- **Reason:** Old boiler unable to heat water; immersion heater used as temporary solution
+- **Impact on Analysis:**
+  - **Electricity usage elevated** during this period (immersion heater is electric)
+  - **From 04/02/2026:** Electricity should decrease (no immersion heater)
+  - **From 04/02/2026:** Gas may increase slightly (new boiler heating water)
+  - When comparing energy costs, factor in the shift from electric water heating to gas
+
+**Recommended Analysis Comparisons:**
+- Gas consumption: Compare weekly/monthly totals before vs after 04/02/2026
+- Electricity consumption: Expect decrease after 04/02/2026 (no immersion heater)
+- **Total energy cost:** Compare combined gas + electricity costs, not just gas alone
+- Heating efficiency: Compare warm-up rates (time to reach target temperature)
+- Room temperature consistency: New boiler may provide more even heating
+
+---
+
 ## Planned Experiments
 
 ### Radiator Bleeding (In Progress)
@@ -360,14 +391,14 @@ curl "http://192.168.1.119:3001/api/energy/backfill?days=400"  # Max ~13 months
 
 ## Analysis Tests API
 
-Available at `http://192.168.1.119:3001/api/analysis/...`
+Available at `http://192.168.0.145:3001/api/analysis/...`
 
 **Note:** Data prior to sensor deployment (15:40 24/12/2024) should be excluded from analysis.
 
 ### Warm-up Rate Test
 ```bash
-curl "http://192.168.1.119:3001/api/analysis/warmup?period=morning&days=7"
-curl "http://192.168.1.119:3001/api/analysis/warmup?period=evening&days=7"
+curl "http://192.168.0.145:3001/api/analysis/warmup?period=morning&days=7"
+curl "http://192.168.0.145:3001/api/analysis/warmup?period=evening&days=7"
 ```
 - Measures how quickly each room heats up after heating starts
 - Returns: avg_temp_rise, avg_mins_to_peak per room
@@ -375,8 +406,8 @@ curl "http://192.168.1.119:3001/api/analysis/warmup?period=evening&days=7"
 
 ### Cool-down Rate Test
 ```bash
-curl "http://192.168.1.119:3001/api/analysis/cooldown?period=morning&days=7"
-curl "http://192.168.1.119:3001/api/analysis/cooldown?period=evening&days=7"
+curl "http://192.168.0.145:3001/api/analysis/cooldown?period=morning&days=7"
+curl "http://192.168.0.145:3001/api/analysis/cooldown?period=evening&days=7"
 ```
 - Measures how quickly each room cools after heating stops
 - Measures temperature drop over 2 hours
@@ -384,21 +415,21 @@ curl "http://192.168.1.119:3001/api/analysis/cooldown?period=evening&days=7"
 
 ### Morning vs Evening Cool-down Comparison
 ```bash
-curl "http://192.168.1.119:3001/api/analysis/morning-vs-evening?days=7"
+curl "http://192.168.0.145:3001/api/analysis/morning-vs-evening?days=7"
 ```
 - Compares cool-down rates between morning (09:30) and evening (22:00)
 - Shows if house loses heat faster at night (colder outside) vs day
 
 ### Morning vs Evening Warm-up Comparison
 ```bash
-curl "http://192.168.1.119:3001/api/analysis/warmup-comparison?days=7"
+curl "http://192.168.0.145:3001/api/analysis/warmup-comparison?days=7"
 ```
 - Compares warm-up rates between morning (06:50-09:30) and evening (15:30-22:00)
 - Shows if rooms heat up faster in evening (warmer starting point) vs morning (cold start)
 
 ### Hallway vs Thermostat Test
 ```bash
-curl "http://192.168.1.119:3001/api/analysis/thermostat?hours=24"
+curl "http://192.168.0.145:3001/api/analysis/thermostat?hours=24"
 ```
 - Compares Entrance Hall (ch2) temperature to thermostat setting (25°C)
 - Shows: avg temp, times reached target, % at target, avg below target
@@ -406,7 +437,7 @@ curl "http://192.168.1.119:3001/api/analysis/thermostat?hours=24"
 
 ### Room Ranking
 ```bash
-curl "http://192.168.1.119:3001/api/analysis/room-ranking?hours=24"
+curl "http://192.168.0.145:3001/api/analysis/room-ranking?hours=24"
 ```
 - Ranks all rooms by avg temp, min, max, range, humidity
 - Quick overview of room performance
@@ -417,28 +448,28 @@ curl "http://192.168.1.119:3001/api/analysis/room-ranking?hours=24"
 
 ### Check sensor readings
 ```bash
-curl -s "http://192.168.1.119:3001/api/current" | python3 -m json.tool
+curl -s "http://192.168.0.145:3001/api/current" | python3 -m json.tool
 ```
 
 ### Restart dashboard service
 ```bash
-ssh root@192.168.1.119 'systemctl restart smart-home-dashboard'
+ssh root@192.168.0.145 'systemctl restart smart-home-dashboard'
 ```
 
 ### View service logs
 ```bash
-ssh root@192.168.1.119 'journalctl -u smart-home-dashboard -f'
+ssh root@192.168.0.145 'journalctl -u smart-home-dashboard -f'
 ```
 
 ### Restart kiosk browser
 ```bash
-ssh root@192.168.1.119 'pkill chromium; DISPLAY=:0 chromium --no-sandbox --kiosk http://localhost:3001 &'
+ssh root@192.168.0.145 'pkill chromium; DISPLAY=:0 chromium --no-sandbox --kiosk http://localhost:3001 &'
 ```
 
 ### Deploy updated files
 ```bash
-cat public/index.html | ssh root@192.168.1.119 'cat > /opt/smart-home-dashboard/public/index.html'
-cat server.js | ssh root@192.168.1.119 'cat > /opt/smart-home-dashboard/server.js'
+cat public/index.html | ssh root@192.168.0.145 'cat > /opt/smart-home-dashboard/public/index.html'
+cat server.js | ssh root@192.168.0.145 'cat > /opt/smart-home-dashboard/server.js'
 ```
 
 ---
