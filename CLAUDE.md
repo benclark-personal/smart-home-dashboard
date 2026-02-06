@@ -340,6 +340,16 @@ curl "http://192.168.0.145:3001/api/energy/backfill?days=400"  # Max ~13 months
 - **Purpose:** Test heat retention with doors closed vs typical open-door baseline
 - **Expected:** Bedrooms should retain heat better overnight; living room may be cooler but more stable
 
+### Energy Data Availability Issue (05/02/2026)
+- **Date:** 05 February 2026
+- **Issue:** Incomplete smart meter data from DCC/Bright API
+- **Observed:** Only 2 electricity readings (0.227 kWh total), 47 readings showing 0.000 kWh
+- **Expected:** ~13 kWh based on Feb 4 evening baseline (0.271 kWh per half-hour)
+- **Cause:** DCC data lag - can take 24-48 hours for complete daily data to populate
+- **Resolution:** Code updated to store zero readings (previously filtered out), but API genuinely returned zeros for missing data
+- **Note:** When analyzing Feb 5, exclude as incomplete. Use Feb 4 evening (post-boiler) for baseline reference.
+- **New Baseline Post-Boiler:** ~13 kWh/day (down from 40-66 kWh/day with immersion heater)
+
 ---
 
 ## System Changes
@@ -369,6 +379,25 @@ curl "http://192.168.0.145:3001/api/energy/backfill?days=400"  # Max ~13 months
 - **Total energy cost:** Compare combined gas + electricity costs, not just gas alone
 - Heating efficiency: Compare warm-up rates (time to reach target temperature)
 - Room temperature consistency: New boiler may provide more even heating
+
+### Smart Pay As You Go (SPAYG) Tariff Switch (27/02/2026)
+- **Switch Date:** 27 February 2026 (goes live in early hours)
+- **Tariff:** Next Flex Smart PAYG (Standard Variable)
+- **Monthly Estimated Usage:** £230.54 (estimate based on current SMART PAYG prices)
+- **Important Notes:**
+  - Wait 24 hours after switch (until 28/02/2026) before first top-up
+  - No exit fees
+  - No contract end date
+  - Unit rates and standing charges not fixed (subject to price reviews)
+  - Debt repayment: £8/week added to meter
+  - Debt free by: ~29 November 2026
+
+**Impact on Analysis:**
+- Energy cost data before 27/02/2026 reflects previous tariff pricing
+- From 27/02/2026 onwards: SPAYG variable pricing applies
+- Budget tracking: £230.54/month estimate + £8/week debt repayment = ~£265/month total
+- Post-boiler baseline: ~13 kWh/day electricity + gas usage
+- Compare actual costs against £230.54 estimate to monitor efficiency
 
 ---
 
@@ -509,6 +538,10 @@ cat server.js | ssh root@192.168.0.145 'cat > /opt/smart-home-dashboard/server.j
 | 25/12/2024 | Added morning vs evening warm-up comparison endpoint |
 | 25/12/2024 | Fixed outdoor temperature Y-axis decimal formatting |
 | 25/12/2024 | Added Hildebrand Bright API integration for smart meter data |
+| 04/02/2026 | New boiler installed, immersion heater decommissioned |
+| 06/02/2026 | Fixed energy data storage to include zero kWh readings |
+| 06/02/2026 | Documented SPAYG tariff switch (effective 27/02/2026) |
+| 06/02/2026 | Identified and documented Feb 5 data availability issue |
 
 ---
 
