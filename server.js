@@ -315,7 +315,8 @@ async function pollBright() {
     let count = 0;
     const insertMany = db.transaction((readings) => {
       for (const r of readings) {
-        if (r.kwh > 0) {
+        // Store all readings including zeros (zero usage is still valid data)
+        if (typeof r.kwh === 'number') {
           insertStmt.run(r.timestamp, r.type, r.kwh, r.cost_pence);
           count++;
         }
@@ -324,10 +325,10 @@ async function pollBright() {
 
     const allReadings = [...elecData, ...gasData];
     insertMany(allReadings);
-    console.log(`[Bright] Stored ${count} energy readings locally (with cost data)`);
+    console.log(`[Bright] Stored ${count} energy readings locally (including zeros)`);
 
-    // Sync to Supabase cloud
-    const validReadings = allReadings.filter(r => r.kwh > 0);
+    // Sync to Supabase cloud - include all numeric readings
+    const validReadings = allReadings.filter(r => typeof r.kwh === 'number');
     if (validReadings.length > 0) {
       await syncEnergyToSupabase(validReadings);
     }
