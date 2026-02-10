@@ -340,15 +340,22 @@ curl "http://192.168.0.145:3001/api/energy/backfill?days=400"  # Max ~13 months
 - **Purpose:** Test heat retention with doors closed vs typical open-door baseline
 - **Expected:** Bedrooms should retain heat better overnight; living room may be cooler but more stable
 
-### Energy Data Availability Issue (05/02/2026)
-- **Date:** 05 February 2026
+### Energy Data Availability Issue - RESOLVED (05-10/02/2026)
+- **Date:** 05-10 February 2026
 - **Issue:** Incomplete smart meter data from DCC/Bright API
-- **Observed:** Only 2 electricity readings (0.227 kWh total), 47 readings showing 0.000 kWh
-- **Expected:** ~13 kWh based on Feb 4 evening baseline (0.271 kWh per half-hour)
-- **Cause:** DCC data lag - can take 24-48 hours for complete daily data to populate
-- **Resolution:** Code updated to store zero readings (previously filtered out), but API genuinely returned zeros for missing data
-- **Note:** When analyzing Feb 5, exclude as incomplete. Use Feb 4 evening (post-boiler) for baseline reference.
-- **New Baseline Post-Boiler:** ~13 kWh/day (down from 40-66 kWh/day with immersion heater)
+- **Observed:** Half-hourly data (PT30M) returning mostly zeros for gas and low values for electricity
+- **Root Cause:** DCC provides daily aggregated data (P1D) immediately, but half-hourly breakdown (PT30M) can lag by 24-48 hours
+- **Resolution (10/02/2026):**
+  - **Smart Fallback System:** Added automatic detection of incomplete half-hourly data (>50% zeros in recent 2 days)
+  - **Daily Aggregation Fallback:** When PT30M incomplete, automatically fetch P1D (daily totals) and distribute evenly across 48 half-hourly periods
+  - **Database Deduplication:** Added unique constraint on (timestamp, type) to allow proper replacement of estimated with actual data
+  - **7-Day Polling Window:** Changed from 1-day to 7-day lookback to catch delayed data updates
+  - **Password Update:** Updated Bright API credentials (was `Hello99&1`, now correct password)
+- **How It Works:**
+  - **Day 0 (initial):** Fetches P1D daily total → Distributes as 48 × (daily_kwh/48)
+  - **Day 1-2 (after DCC sync):** PT30M becomes available → Automatically replaces distributed values with actual half-hourly readings
+- **Data Quality:** System now provides immediate data (via P1D) and self-corrects to actual readings (via PT30M) as they become available
+- **New Baseline Post-Boiler:** ~13-25 kWh/day electricity, ~50-90 kWh/day gas (down from 40-66 kWh/day electricity when using immersion heater)
 
 ---
 
@@ -470,6 +477,51 @@ curl "http://192.168.0.145:3001/api/analysis/room-ranking?hours=24"
 ```
 - Ranks all rooms by avg temp, min, max, range, humidity
 - Quick overview of room performance
+
+---
+
+## Energy Analysis Endpoints
+
+### Usage Pattern Analysis
+```bash
+# Analyze both electricity and gas (last 30 days)
+curl "http://192.168.0.145:3001/api/energy/analysis?days=30&type=both"
+
+# Gas only
+curl "http://192.168.0.145:3001/api/energy/analysis?days=30&type=gas"
+
+# Electricity only
+curl "http://192.168.0.145:3001/api/energy/analysis?days=30&type=electricity"
+```
+
+**Returns:**
+- **Statistics:** Average, median, std deviation, min/max, total
+- **Spikes:** Days with usage >1.5 std deviations above mean (unusual high usage)
+- **Quiet Days:** Days with usage >1 std deviation below mean (unusually low usage)
+- **Day of Week Patterns:** Average usage per day of week with % difference from overall average
+- **Extremes:** Highest and lowest usage days
+
+### Hourly Usage Patterns
+```bash
+# Electricity hourly patterns (last 7 days)
+curl "http://192.168.0.145:3001/api/energy/hourly-patterns?days=7&type=electricity"
+
+# Gas hourly patterns
+curl "http://192.168.0.145:3001/api/energy/hourly-patterns?days=7&type=gas"
+```
+
+**Returns:**
+- **Hourly breakdown:** Average, max, min usage per hour
+- **Peak hours:** Hours with >20% above average usage
+- **Quiet hours:** Hours with <20% of average usage
+- **Percentage vs average:** How each hour compares to overall average
+
+**Use Cases:**
+- Identify which days of the week have highest/lowest usage
+- Find unusual spikes that may indicate issues or special events
+- Understand time-of-day patterns to optimize usage
+- Compare weekday vs weekend patterns
+- Track improvements after efficiency changes (e.g., new boiler)
 
 ---
 

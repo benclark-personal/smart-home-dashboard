@@ -131,6 +131,33 @@ try {
   db.exec(`CREATE INDEX IF NOT EXISTS idx_meter_datetime ON meter_readings(reading_datetime)`);
 } catch (e) { /* index already exists */ }
 
+// Migration: deduplicate energy_readings and add unique constraint
+try {
+  // Check if unique index already exists
+  const indexExists = db.prepare(`SELECT COUNT(*) as count FROM sqlite_master WHERE type='index' AND name='idx_energy_unique'`).get();
+
+  if (!indexExists || indexExists.count === 0) {
+    console.log('[Migration] Deduplicating energy_readings and creating unique index...');
+
+    // Delete duplicates, keeping the entry with highest kwh for each (timestamp, type)
+    db.exec(`
+      DELETE FROM energy_readings
+      WHERE id NOT IN (
+        SELECT MAX(id)
+        FROM energy_readings
+        GROUP BY timestamp, type
+      )
+    `);
+
+    // Now create the unique index
+    db.exec(`CREATE UNIQUE INDEX idx_energy_unique ON energy_readings(timestamp, type)`);
+
+    console.log('[Migration] Deduplication complete');
+  }
+} catch (e) {
+  console.error('[Migration] Error deduplicating energy_readings:', e.message);
+}
+
 // Convert Fahrenheit to Celsius
 function fahrenheitToCelsius(f) {
   return ((f - 32) * 5) / 9;
@@ -209,15 +236,15 @@ async function getBrightToken() {
   return await authenticateBright();
 }
 
-// Fetch energy readings from Bright API
-function fetchBrightReadings(resourceId, type, fromDate, toDate) {
+// Fetch energy readings from Bright API with specified period
+function fetchBrightReadingsRaw(resourceId, type, fromDate, toDate, period = 'PT30M') {
   return new Promise(async (resolve, reject) => {
     try {
       const token = await getBrightToken();
       const fromStr = fromDate.toISOString().slice(0, 19);
       const toStr = toDate.toISOString().slice(0, 19);
 
-      const path = `/api/v0-1/resource/${resourceId}/readings?from=${fromStr}&to=${toStr}&period=PT30M&function=sum`;
+      const path = `/api/v0-1/resource/${resourceId}/readings?from=${fromStr}&to=${toStr}&period=${period}&function=sum`;
 
       const options = {
         hostname: 'api.glowmarkt.com',
@@ -231,7 +258,7 @@ function fetchBrightReadings(resourceId, type, fromDate, toDate) {
         }
       };
 
-      console.log(`[Bright] Fetching ${type}: ${path}`);
+      console.log(`[Bright] Fetching ${type} (${period}): ${path}`);
 
       const req = https.request(options, (res) => {
         let data = '';
@@ -268,6 +295,49 @@ function fetchBrightReadings(resourceId, type, fromDate, toDate) {
   });
 }
 
+// Fetch energy readings with fallback to daily aggregation if half-hourly data is incomplete
+async function fetchBrightReadings(resourceId, type, fromDate, toDate) {
+  // Try half-hourly data first
+  const halfHourly = await fetchBrightReadingsRaw(resourceId, type, fromDate, toDate, 'PT30M');
+
+  // Check if recent days (last 48-96 hours) are mostly zeros - indicates DCC lag
+  const now = new Date();
+  const twoDaysAgo = new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000);
+  const recentReadings = halfHourly.filter(r => new Date(r.timestamp) >= twoDaysAgo);
+  const recentNonZero = recentReadings.filter(r => r.kwh > 0).length;
+  const recentZeroPercentage = recentReadings.length > 0 ? (recentReadings.length - recentNonZero) / recentReadings.length : 0;
+
+  // If recent data has >50% zeros, try daily aggregation for entire period
+  if (recentReadings.length > 0 && recentZeroPercentage > 0.5) {
+    console.log(`[Bright] ${type} recent data has ${(recentZeroPercentage * 100).toFixed(0)}% zeros (${recentNonZero}/${recentReadings.length}), trying daily aggregation...`);
+
+    const daily = await fetchBrightReadingsRaw(resourceId, type, fromDate, toDate, 'P1D');
+
+    // Convert daily readings to half-hourly by distributing evenly across 48 periods
+    const expanded = [];
+    for (const dayReading of daily) {
+      const dayStart = new Date(dayReading.timestamp);
+      dayStart.setHours(0, 0, 0, 0);
+      const kwhPerHalfHour = dayReading.kwh / 48;
+
+      for (let i = 0; i < 48; i++) {
+        const timestamp = new Date(dayStart);
+        timestamp.setMinutes(i * 30);
+        expanded.push({
+          timestamp: timestamp.toISOString(),
+          type: type,
+          kwh: kwhPerHalfHour
+        });
+      }
+    }
+
+    console.log(`[Bright] ${type} expanded ${daily.length} daily readings to ${expanded.length} half-hourly readings`);
+    return expanded;
+  }
+
+  return halfHourly;
+}
+
 // Merge consumption and cost data by timestamp
 function mergeConsumptionAndCost(consumptionData, costData) {
   const costMap = new Map();
@@ -286,11 +356,11 @@ async function pollBright() {
   try {
     console.log('[Bright] Polling energy data...');
 
-    // Get yesterday's data (DCC data is delayed)
+    // Get last 7 days of data (DCC data can be delayed or incomplete, so re-fetch recent days)
     const toDate = new Date();
     toDate.setHours(0, 0, 0, 0); // Start of today
     const fromDate = new Date(toDate);
-    fromDate.setDate(fromDate.getDate() - 1); // Yesterday
+    fromDate.setDate(fromDate.getDate() - 7); // Last 7 days
 
     // Fetch consumption and cost data sequentially - Bright API doesn't handle concurrent requests well
     const elecConsumption = await fetchBrightReadings(BRIGHT_CONFIG.resources.electricityConsumption, 'electricity', fromDate, toDate);
@@ -1640,6 +1710,177 @@ app.get('/api/energy/correlation', (req, res) => {
   `).all(days, days);
 
   res.json(correlation);
+});
+
+// Energy usage analysis - identify patterns, spikes, and quiet days
+app.get('/api/energy/analysis', (req, res) => {
+  const days = parseInt(req.query.days) || 30;
+  const energyType = req.query.type || 'both'; // 'electricity', 'gas', or 'both'
+
+  // Get daily totals for analysis
+  const dailyData = db.prepare(`
+    SELECT
+      date(timestamp) as date,
+      type,
+      SUM(kwh) as total_kwh,
+      SUM(cost_pence) as total_cost_pence,
+      strftime('%w', timestamp) as day_of_week
+    FROM (
+      SELECT timestamp, type, kwh, cost_pence FROM energy_readings
+      WHERE timestamp >= datetime('now', '-' || ? || ' days')
+        AND (? = 'both' OR type = ?)
+      GROUP BY timestamp, type
+    )
+    GROUP BY date(timestamp), type
+    ORDER BY date(timestamp)
+  `).all(days, energyType, energyType);
+
+  // Separate by type
+  const electricityData = dailyData.filter(d => d.type === 'electricity');
+  const gasData = dailyData.filter(d => d.type === 'gas');
+
+  // Calculate statistics
+  const analyzeType = (data, typeName) => {
+    if (data.length === 0) return null;
+
+    const values = data.map(d => d.total_kwh);
+    const avg = values.reduce((a, b) => a + b, 0) / values.length;
+    const sorted = [...values].sort((a, b) => a - b);
+    const median = sorted[Math.floor(sorted.length / 2)];
+    const stdDev = Math.sqrt(values.reduce((sum, val) => sum + Math.pow(val - avg, 2), 0) / values.length);
+
+    // Identify spikes (>1.5 std deviations above mean)
+    const spikeThreshold = avg + (1.5 * stdDev);
+    const spikes = data.filter(d => d.total_kwh > spikeThreshold).map(d => ({
+      date: d.date,
+      kwh: d.total_kwh,
+      percentAboveAvg: ((d.total_kwh - avg) / avg * 100).toFixed(1),
+      dayOfWeek: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d.day_of_week]
+    }));
+
+    // Identify quiet days (>1 std deviation below mean)
+    const quietThreshold = avg - stdDev;
+    const quietDays = data.filter(d => d.total_kwh < quietThreshold).map(d => ({
+      date: d.date,
+      kwh: d.total_kwh,
+      percentBelowAvg: ((avg - d.total_kwh) / avg * 100).toFixed(1),
+      dayOfWeek: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d.day_of_week]
+    }));
+
+    // Day of week analysis
+    const byDayOfWeek = {};
+    for (let i = 0; i < 7; i++) {
+      const dayData = data.filter(d => d.day_of_week == i);
+      if (dayData.length > 0) {
+        const dayAvg = dayData.reduce((sum, d) => sum + d.total_kwh, 0) / dayData.length;
+        byDayOfWeek[['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][i]] = {
+          avg_kwh: Math.round(dayAvg * 100) / 100,
+          days_count: dayData.length,
+          percentVsOverall: ((dayAvg - avg) / avg * 100).toFixed(1)
+        };
+      }
+    }
+
+    // Highest and lowest days
+    const highest = data.reduce((max, d) => d.total_kwh > max.total_kwh ? d : max, data[0]);
+    const lowest = data.reduce((min, d) => d.total_kwh < min.total_kwh ? d : min, data[0]);
+
+    return {
+      type: typeName,
+      period_days: data.length,
+      statistics: {
+        average_kwh: Math.round(avg * 100) / 100,
+        median_kwh: Math.round(median * 100) / 100,
+        std_deviation: Math.round(stdDev * 100) / 100,
+        min_kwh: Math.round(sorted[0] * 100) / 100,
+        max_kwh: Math.round(sorted[sorted.length - 1] * 100) / 100,
+        total_kwh: Math.round(values.reduce((a, b) => a + b, 0) * 100) / 100
+      },
+      spikes: {
+        threshold_kwh: Math.round(spikeThreshold * 100) / 100,
+        count: spikes.length,
+        days: spikes.sort((a, b) => b.kwh - a.kwh).slice(0, 10) // Top 10
+      },
+      quiet_days: {
+        threshold_kwh: Math.round(quietThreshold * 100) / 100,
+        count: quietDays.length,
+        days: quietDays.sort((a, b) => a.kwh - b.kwh).slice(0, 10) // Bottom 10
+      },
+      by_day_of_week: byDayOfWeek,
+      extremes: {
+        highest: {
+          date: highest.date,
+          kwh: highest.total_kwh,
+          dayOfWeek: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][highest.day_of_week]
+        },
+        lowest: {
+          date: lowest.date,
+          kwh: lowest.total_kwh,
+          dayOfWeek: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][lowest.day_of_week]
+        }
+      }
+    };
+  };
+
+  const analysis = {};
+  if (energyType === 'electricity' || energyType === 'both') {
+    analysis.electricity = analyzeType(electricityData, 'electricity');
+  }
+  if (energyType === 'gas' || energyType === 'both') {
+    analysis.gas = analyzeType(gasData, 'gas');
+  }
+
+  res.json(analysis);
+});
+
+// Hourly usage patterns - identify peak hours
+app.get('/api/energy/hourly-patterns', (req, res) => {
+  const days = parseInt(req.query.days) || 7;
+  const energyType = req.query.type || 'electricity'; // 'electricity' or 'gas'
+
+  const hourlyData = db.prepare(`
+    SELECT
+      strftime('%H', timestamp) as hour,
+      AVG(kwh) as avg_kwh,
+      MAX(kwh) as max_kwh,
+      MIN(kwh) as min_kwh,
+      COUNT(*) as reading_count
+    FROM (
+      SELECT timestamp, kwh FROM energy_readings
+      WHERE type = ?
+        AND timestamp >= datetime('now', '-' || ? || ' days')
+      GROUP BY timestamp
+    )
+    GROUP BY strftime('%H', timestamp)
+    ORDER BY hour
+  `).all(energyType, days);
+
+  // Calculate overall average for comparison
+  const overallAvg = hourlyData.reduce((sum, h) => sum + h.avg_kwh, 0) / hourlyData.length;
+
+  const analysis = hourlyData.map(h => ({
+    hour: parseInt(h.hour),
+    timeLabel: `${h.hour}:00-${h.hour}:30`,
+    avg_kwh: Math.round(h.avg_kwh * 1000) / 1000,
+    max_kwh: Math.round(h.max_kwh * 1000) / 1000,
+    min_kwh: Math.round(h.min_kwh * 1000) / 1000,
+    percentVsAvg: ((h.avg_kwh - overallAvg) / overallAvg * 100).toFixed(1),
+    isPeak: h.avg_kwh > overallAvg * 1.2,
+    isQuiet: h.avg_kwh < overallAvg * 0.8
+  }));
+
+  // Identify peak hours
+  const peakHours = analysis.filter(h => h.isPeak).sort((a, b) => b.avg_kwh - a.avg_kwh);
+  const quietHours = analysis.filter(h => h.isQuiet).sort((a, b) => a.avg_kwh - b.avg_kwh);
+
+  res.json({
+    type: energyType,
+    period_days: days,
+    overall_avg_kwh: Math.round(overallAvg * 1000) / 1000,
+    hourly_breakdown: analysis,
+    peak_hours: peakHours,
+    quiet_hours: quietHours
+  });
 });
 
 // Water API endpoints
