@@ -79,17 +79,21 @@ Sensors registered via HP2561 console "Sensor ID" feature to lock specific senso
 
 ### Central Heating Thermostat
 - **Location:** Entrance Hall (wall opposite WC, near stairs)
-- **Current Setting:** 25°C
+- **Current Setting:** 21-22°C
 - **Reference Sensor:** ch2 (Entrance Hall) placed nearby for comparison
 
 ### Heating Schedule
 
 ```javascript
 const HEATING_SCHEDULE = [
-  { start: '06:50', end: '09:30' },  // Morning
+  { start: '06:00', end: '10:00' },  // Morning
   { start: '15:30', end: '22:00' }   // Evening
 ];
 ```
+
+### Hot Water Schedule
+- Morning: 06:20 - 08:30
+- Evening: 15:30 - 18:30
 
 Heating periods are displayed as orange-shaded regions on history charts.
 

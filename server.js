@@ -80,6 +80,7 @@ db.exec(`
 
   CREATE INDEX IF NOT EXISTS idx_timestamp ON readings(timestamp);
   CREATE INDEX IF NOT EXISTS idx_channel ON readings(channel);
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_readings_unique ON readings(timestamp, channel);
 
   CREATE TABLE IF NOT EXISTS energy_readings (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1170,6 +1171,106 @@ app.get('/api/poll', async (req, res) => {
   res.json({ success: true, readings, stats });
 });
 
+// Backfill temperature readings from Ecowitt cloud history API
+app.get('/api/backfill', async (req, res) => {
+  const days = parseInt(req.query.days) || 7;
+  const endDate = req.query.end ? new Date(req.query.end) : new Date();
+  const startDate = req.query.start ? new Date(req.query.start) : new Date(endDate.getTime() - days * 24 * 60 * 60 * 1000);
+
+  const channelCallbacks = 'indoor,outdoor,temp_and_humidity_ch1,temp_and_humidity_ch2,temp_and_humidity_ch3,temp_and_humidity_ch4,temp_and_humidity_ch5';
+
+  const channelMap = {
+    'indoor': { channel: 'indoor', room: ROOM_NAMES['indoor'] },
+    'outdoor': { channel: 'outdoor', room: ROOM_NAMES['outdoor'] },
+    'temp_and_humidity_ch1': { channel: 'ch1', room: ROOM_NAMES['ch1'] },
+    'temp_and_humidity_ch2': { channel: 'ch2', room: ROOM_NAMES['ch2'] },
+    'temp_and_humidity_ch3': { channel: 'ch3', room: ROOM_NAMES['ch3'] },
+    'temp_and_humidity_ch4': { channel: 'ch4', room: ROOM_NAMES['ch4'] },
+    'temp_and_humidity_ch5': { channel: 'ch5', room: ROOM_NAMES['ch5'] }
+  };
+
+  const insertStmt = db.prepare(`
+    INSERT OR IGNORE INTO readings (timestamp, channel, room_name, temperature_c, humidity, battery)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `);
+
+  let totalInserted = 0;
+  let daysFetched = 0;
+  const errors = [];
+
+  // Fetch one day at a time (API limits ~1 day per request at 5min intervals)
+  let current = new Date(startDate);
+  while (current < endDate) {
+    const dayEnd = new Date(Math.min(current.getTime() + 24 * 60 * 60 * 1000, endDate.getTime()));
+    const startStr = current.toISOString().replace('T', ' ').substring(0, 19);
+    const endStr = dayEnd.toISOString().replace('T', ' ').substring(0, 19);
+
+    console.log(`[Backfill] Fetching ${startStr} to ${endStr}...`);
+
+    try {
+      const url = `https://api.ecowitt.net/api/v3/device/history?application_key=${ECOWITT_CONFIG.applicationKey}&api_key=${ECOWITT_CONFIG.apiKey}&mac=${ECOWITT_CONFIG.mac}&start_date=${encodeURIComponent(startStr)}&end_date=${encodeURIComponent(endStr)}&cycle_type=5min&call_back=${channelCallbacks}`;
+
+      const data = await new Promise((resolve, reject) => {
+        https.get(url, (resp) => {
+          let body = '';
+          resp.on('data', chunk => body += chunk);
+          resp.on('end', () => {
+            try { resolve(JSON.parse(body)); } catch (e) { reject(e); }
+          });
+        }).on('error', reject);
+      });
+
+      if (data.code !== 0) {
+        errors.push(`${startStr}: API error - ${data.msg}`);
+        current = dayEnd;
+        continue;
+      }
+
+      let dayInserted = 0;
+      const insertMany = db.transaction(() => {
+        for (const [apiKey, mapping] of Object.entries(channelMap)) {
+          const channelData = data.data[apiKey];
+          if (!channelData || !channelData.temperature || !channelData.temperature.list) continue;
+
+          const tempList = channelData.temperature.list;
+          const humidityList = channelData.humidity ? channelData.humidity.list : {};
+
+          for (const [epochStr, tempF] of Object.entries(tempList)) {
+            const epoch = parseInt(epochStr);
+            const timestamp = new Date(epoch * 1000).toISOString();
+            const tempC = Math.round(((parseFloat(tempF) - 32) * 5 / 9) * 10) / 10;
+            const humidity = humidityList[epochStr] ? parseInt(humidityList[epochStr]) : null;
+
+            const result = insertStmt.run(timestamp, mapping.channel, mapping.room, tempC, humidity, 0);
+            if (result.changes > 0) dayInserted++;
+          }
+        }
+      });
+
+      insertMany();
+      totalInserted += dayInserted;
+      daysFetched++;
+      console.log(`[Backfill] ${startStr}: inserted ${dayInserted} readings`);
+    } catch (err) {
+      errors.push(`${startStr}: ${err.message}`);
+      console.error(`[Backfill] Error for ${startStr}:`, err.message);
+    }
+
+    current = dayEnd;
+    // Rate limit: small delay between requests
+    await new Promise(r => setTimeout(r, 500));
+  }
+
+  console.log(`[Backfill] Complete: ${totalInserted} readings inserted over ${daysFetched} days`);
+  res.json({
+    success: true,
+    totalInserted,
+    daysFetched,
+    range: { start: startDate.toISOString(), end: endDate.toISOString() },
+    errors: errors.length > 0 ? errors : undefined
+  });
+});
+
 // Daily statistics endpoint
 app.get('/api/stats/daily', (req, res) => {
   const days = parseInt(req.query.days) || 7;
@@ -1215,10 +1316,10 @@ app.get('/api/info', (req, res) => {
 
 // Heating schedule for analysis
 const HEATING_SCHEDULE = {
-  morning: { start: '06:50', end: '09:30' },
+  morning: { start: '06:00', end: '10:00' },
   evening: { start: '15:30', end: '22:00' }
 };
-const THERMOSTAT_SETTING = 25;
+const THERMOSTAT_SETTING = 22;
 
 // Warm-up rate analysis - how quickly rooms heat up when heating starts
 app.get('/api/analysis/warmup', (req, res) => {
@@ -1359,7 +1460,7 @@ app.get('/api/analysis/morning-vs-evening', (req, res) => {
   `).all(days, days);
 
   res.json({
-    morning: { period: '09:30 to 11:30', results: morningCooldown },
+    morning: { period: '10:00 to 11:30', results: morningCooldown },
     evening: { period: '22:00 to 00:00', results: eveningCooldown }
   });
 });
@@ -1368,7 +1469,7 @@ app.get('/api/analysis/morning-vs-evening', (req, res) => {
 app.get('/api/analysis/warmup-comparison', (req, res) => {
   const days = parseInt(req.query.days) || 7;
 
-  // Get warm-up rates for morning period (06:50 - 09:30)
+  // Get warm-up rates for morning period (06:00 - 10:00)
   const morningWarmup = db.prepare(`
     WITH morning_start AS (
       SELECT date(timestamp) as day, room_name, temperature_c as temp
@@ -1380,7 +1481,7 @@ app.get('/api/analysis/warmup-comparison', (req, res) => {
     morning_peak AS (
       SELECT date(timestamp) as day, room_name, MAX(temperature_c) as temp
       FROM readings
-      WHERE time(timestamp) BETWEEN '06:50' AND '09:30'
+      WHERE time(timestamp) BETWEEN '06:00' AND '10:00'
         AND timestamp >= datetime('now', '-' || ? || ' days')
         AND room_name != 'Outside'
       GROUP BY date(timestamp), room_name
@@ -1415,7 +1516,7 @@ app.get('/api/analysis/warmup-comparison', (req, res) => {
   `).all(days, days);
 
   res.json({
-    morning: { period: '06:50 to 09:30', results: morningWarmup },
+    morning: { period: '06:00 to 10:00', results: morningWarmup },
     evening: { period: '15:30 to 22:00', results: eveningWarmup }
   });
 });
@@ -1429,7 +1530,7 @@ app.get('/api/analysis/thermostat', (req, res) => {
       temperature_c,
       timestamp,
       CASE
-        WHEN time(timestamp) BETWEEN '06:50' AND '09:30' THEN 'morning_heating'
+        WHEN time(timestamp) BETWEEN '06:00' AND '10:00' THEN 'morning_heating'
         WHEN time(timestamp) BETWEEN '15:30' AND '22:00' THEN 'evening_heating'
         ELSE 'heating_off'
       END as period
