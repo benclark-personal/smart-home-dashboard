@@ -1316,8 +1316,7 @@ app.get('/api/info', (req, res) => {
 
 // Heating schedule for analysis
 const HEATING_SCHEDULE = {
-  morning: { start: '06:00', end: '10:00' },
-  evening: { start: '15:30', end: '22:00' }
+  morning: { start: '06:00', end: '22:00' }
 };
 const THERMOSTAT_SETTING = 22;
 
