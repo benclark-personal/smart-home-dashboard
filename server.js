@@ -1629,31 +1629,84 @@ app.get('/api/energy/daily', (req, res) => {
   res.json(totals);
 });
 
-// Get current energy status (deduplicated)
+// Get current energy status with all billing periods
 app.get('/api/energy/current', (req, res) => {
-  const today = db.prepare(`
+  const queryRange = db.prepare(`
     SELECT type, SUM(kwh) as kwh, SUM(cost_pence) as cost_pence
     FROM (
       SELECT timestamp, type, kwh, cost_pence FROM energy_readings
-      WHERE date(timestamp) = date('now', '-1 day')
+      WHERE date(timestamp) >= ? AND date(timestamp) <= ?
       GROUP BY timestamp, type
     )
     GROUP BY type
-  `).all();
+  `);
 
-  const week = db.prepare(`
-    SELECT type, SUM(kwh) as kwh, SUM(cost_pence) as cost_pence
-    FROM (
-      SELECT timestamp, type, kwh, cost_pence FROM energy_readings
-      WHERE timestamp >= datetime('now', '-7 days')
-      GROUP BY timestamp, type
-    )
-    GROUP BY type
-  `).all();
+  const toObj = (rows) => rows.reduce((acc, r) => {
+    acc[r.type] = r.kwh;
+    acc[r.type + '_cost'] = r.cost_pence;
+    return acc;
+  }, {});
+
+  const toDateStr = (d) => d.toISOString().slice(0, 10);
+
+  const now = new Date();
+  const todayStr = toDateStr(now);
+
+  // Yesterday
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const yesterdayStr = toDateStr(yesterday);
+
+  // This week: Monday to today
+  const thisMondayOffset = (now.getDay() + 6) % 7;
+  const thisMonday = new Date(now);
+  thisMonday.setDate(now.getDate() - thisMondayOffset);
+  const thisMondayStr = toDateStr(thisMonday);
+
+  // Last week: Mon to Sun of previous week
+  const lastMonday = new Date(thisMonday);
+  lastMonday.setDate(thisMonday.getDate() - 7);
+  const lastSunday = new Date(thisMonday);
+  lastSunday.setDate(thisMonday.getDate() - 1);
+  const lastMondayStr = toDateStr(lastMonday);
+  const lastSundayStr = toDateStr(lastSunday);
+
+  // Billing periods: start on 27th of each month
+  const BILLING_DAY = 27;
+  let thisPeriodStart;
+  if (now.getDate() >= BILLING_DAY) {
+    thisPeriodStart = new Date(now.getFullYear(), now.getMonth(), BILLING_DAY);
+  } else {
+    thisPeriodStart = new Date(now.getFullYear(), now.getMonth() - 1, BILLING_DAY);
+  }
+  const thisPeriodEnd = now;
+  const thisPeriodDays = Math.ceil((thisPeriodEnd - thisPeriodStart) / (1000 * 60 * 60 * 24)) + 1;
+
+  const lastPeriodEnd = new Date(thisPeriodStart);
+  lastPeriodEnd.setDate(lastPeriodEnd.getDate() - 1);
+  const lastPeriodStart = new Date(thisPeriodStart);
+  lastPeriodStart.setMonth(lastPeriodStart.getMonth() - 1);
+  const lastPeriodDays = Math.ceil((lastPeriodEnd - lastPeriodStart) / (1000 * 60 * 60 * 24)) + 1;
+
+  const thisPeriodStartStr = toDateStr(thisPeriodStart);
+  const lastPeriodStartStr = toDateStr(lastPeriodStart);
+  const lastPeriodEndStr = toDateStr(lastPeriodEnd);
 
   res.json({
-    yesterday: today.reduce((acc, r) => { acc[r.type] = r.kwh; acc[r.type + '_cost'] = r.cost_pence; return acc; }, {}),
-    lastWeek: week.reduce((acc, r) => { acc[r.type] = r.kwh; acc[r.type + '_cost'] = r.cost_pence; return acc; }, {})
+    yesterday: toObj(queryRange.all(yesterdayStr, yesterdayStr)),
+    thisWeek: toObj(queryRange.all(thisMondayStr, todayStr)),
+    lastWeek: toObj(queryRange.all(lastMondayStr, lastSundayStr)),
+    thisPeriod: {
+      data: toObj(queryRange.all(thisPeriodStartStr, todayStr)),
+      start: thisPeriodStartStr,
+      days: thisPeriodDays
+    },
+    lastPeriod: {
+      data: toObj(queryRange.all(lastPeriodStartStr, lastPeriodEndStr)),
+      start: lastPeriodStartStr,
+      end: lastPeriodEndStr,
+      days: lastPeriodDays
+    }
   });
 });
 

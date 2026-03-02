@@ -470,6 +470,241 @@
       .tabs { gap: 5px; }
       .tab-btn { padding: 8px 12px; font-size: 0.8rem; }
     }
+
+    /* PAYG Energy Layout */
+    .energy-payg-summary {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 15px;
+      margin-bottom: 20px;
+      max-width: 900px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+
+    .payg-card {
+      background: rgba(255, 255, 255, 0.06);
+      border-radius: 12px;
+      padding: 20px;
+      border-left: 4px solid #888;
+    }
+
+    .payg-card.gas-card { border-left-color: #ff7043; }
+    .payg-card.elec-card { border-left-color: #9575cd; }
+
+    .payg-card-header {
+      font-size: 1rem;
+      font-weight: 600;
+      color: #ccc;
+      margin-bottom: 4px;
+    }
+
+    .payg-card-period {
+      font-size: 0.75rem;
+      color: #666;
+      margin-bottom: 10px;
+    }
+
+    .payg-card-total {
+      font-size: 2.2rem;
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+
+    .gas-card .payg-card-total { color: #ff7043; }
+    .elec-card .payg-card-total { color: #9575cd; }
+
+    .payg-card-breakdown {
+      font-size: 0.8rem;
+      color: #888;
+      line-height: 1.6;
+    }
+
+    .payg-card-rate {
+      font-size: 0.72rem;
+      color: #555;
+      margin-top: 8px;
+      border-top: 1px solid rgba(255,255,255,0.06);
+      padding-top: 8px;
+    }
+
+    .payg-card-daily {
+      font-size: 0.85rem;
+      color: #aaa;
+      margin-top: 6px;
+    }
+
+    /* Balance tracker */
+    .balance-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin: 10px 0 6px;
+      border-top: 1px solid rgba(255,255,255,0.06);
+      padding-top: 10px;
+    }
+
+    .balance-label {
+      font-size: 0.75rem;
+      color: #888;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .balance-input {
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 6px;
+      color: #fff;
+      font-size: 0.95rem;
+      font-weight: 600;
+      padding: 4px 8px;
+      width: 80px;
+      text-align: center;
+    }
+
+    .balance-input:focus {
+      outline: none;
+      border-color: rgba(255,255,255,0.3);
+    }
+
+    .days-remaining {
+      font-size: 1rem;
+      font-weight: 700;
+      margin-top: 2px;
+    }
+
+    .days-remaining.warning { color: #ff9800; }
+    .days-remaining.critical { color: #ff5252; }
+    .days-remaining.ok { color: #81c784; }
+
+    .topup-date {
+      font-size: 0.78rem;
+      color: #888;
+      margin-top: 2px;
+    }
+
+    /* Progress bar for days remaining */
+    .days-bar-container {
+      background: rgba(255,255,255,0.08);
+      border-radius: 4px;
+      height: 6px;
+      margin: 6px 0 2px;
+      overflow: hidden;
+    }
+
+    .days-bar {
+      height: 100%;
+      border-radius: 4px;
+      transition: width 0.5s;
+    }
+
+    .gas-card .days-bar { background: #ff7043; }
+    .elec-card .days-bar { background: #9575cd; }
+
+    /* Budget comparison */
+    .budget-comparison {
+      background: rgba(255,255,255,0.05);
+      border-radius: 12px;
+      padding: 16px 20px;
+      margin-bottom: 20px;
+      max-width: 900px;
+      margin-left: auto;
+      margin-right: auto;
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+      text-align: center;
+    }
+
+    .budget-item .budget-label {
+      font-size: 0.7rem;
+      color: #666;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      margin-bottom: 4px;
+    }
+
+    .budget-item .budget-value {
+      font-size: 1.2rem;
+      font-weight: 700;
+      color: #ccc;
+    }
+
+    .budget-item .budget-sub {
+      font-size: 0.72rem;
+      color: #555;
+      margin-top: 2px;
+    }
+
+    .budget-item.under .budget-value { color: #81c784; }
+    .budget-item.over .budget-value { color: #ff7043; }
+
+    /* Energy breakdown table */
+    .energy-table-container {
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 20px;
+      overflow-x: auto;
+    }
+
+    .energy-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.9rem;
+    }
+
+    .energy-table th {
+      text-align: center;
+      padding: 10px 14px;
+      color: #888;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+    }
+
+    .energy-table th.gas-col { color: #ff7043; }
+    .energy-table th.elec-col { color: #9575cd; }
+    .energy-table th.total-col { color: #4fc3f7; }
+
+    .energy-table td {
+      padding: 10px 14px;
+      text-align: center;
+      border-bottom: 1px solid rgba(255,255,255,0.04);
+    }
+
+    .energy-table td.period-label {
+      text-align: left;
+      color: #ccc;
+      font-weight: 500;
+      white-space: nowrap;
+    }
+
+    .energy-table td.gas-col { color: #ff7043; }
+    .energy-table td.elec-col { color: #9575cd; }
+    .energy-table td.total-col { color: #4fc3f7; font-weight: 600; }
+
+    .energy-table tr.highlight-row td {
+      background: rgba(79, 195, 247, 0.05);
+    }
+
+    .energy-table tr.highlight-row td.period-label {
+      color: #4fc3f7;
+    }
+
+    .energy-table .sub-label {
+      font-size: 0.72rem;
+      color: #555;
+      display: block;
+    }
+
+    @media (max-width: 768px) {
+      .energy-payg-summary { grid-template-columns: 1fr; }
+      .energy-table { font-size: 0.8rem; }
+      .energy-table th, .energy-table td { padding: 8px 8px; }
+    }
   </style>
 </head>
 <body>
@@ -659,32 +894,125 @@
 
   <!-- Energy Tab -->
   <div id="tab-energy" class="tab-content">
-    <div class="stats-bar" id="energyStatsBar">
-      <div class="stat" style="border-left: 3px solid #ffc107;">
-        <div class="stat-label">Yesterday</div>
-        <div class="stat-value" id="energyYesterday" style="color: #ffc107;">--</div>
-        <div class="stat-room" id="energyYesterdayBreakdown">--</div>
+
+    <!-- PAYG Meter Summary Cards -->
+    <div class="energy-payg-summary">
+      <div class="payg-card gas-card">
+        <div class="payg-card-header">Gas Meter</div>
+        <div class="payg-card-period" id="gasPeriodLabel">This billing period (since 27th)</div>
+        <div class="payg-card-total" id="gasPeriodTotal">--</div>
+        <div class="payg-card-breakdown" id="gasPeriodBreakdown">--</div>
+        <div class="payg-card-daily" id="gasPeriodDaily"></div>
+        <div class="balance-row">
+          <span class="balance-label">Balance</span>
+          <span style="color:#888; font-size:0.9rem;">£</span>
+          <input class="balance-input" id="gasBalance" type="number" step="0.01" min="0"
+            value="" placeholder="0.00" oninput="saveBalance('gas', this.value); updateBalanceDays()">
+        </div>
+        <div class="days-remaining ok" id="gasDaysRemaining">-- days remaining</div>
+        <div class="days-bar-container"><div class="days-bar" id="gasDaysBar" style="width:0%"></div></div>
+        <div class="topup-date" id="gasTopupDate"></div>
+        <div class="payg-card-rate">5.63p/kWh &bull; 35.11p/day standing &bull; £8/wk debt</div>
       </div>
-      <div class="stat" style="border-left: 3px solid #4fc3f7;">
-        <div class="stat-label">This Week</div>
-        <div class="stat-value" id="energyWeek" style="color: #4fc3f7;">--</div>
-        <div class="stat-room" id="energyWeekBreakdown">--</div>
+      <div class="payg-card elec-card">
+        <div class="payg-card-header">Electricity Meter</div>
+        <div class="payg-card-period" id="elecPeriodLabel">This billing period (since 27th)</div>
+        <div class="payg-card-total" id="elecPeriodTotal">--</div>
+        <div class="payg-card-breakdown" id="elecPeriodBreakdown">--</div>
+        <div class="payg-card-daily" id="elecPeriodDaily"></div>
+        <div class="balance-row">
+          <span class="balance-label">Balance</span>
+          <span style="color:#888; font-size:0.9rem;">£</span>
+          <input class="balance-input" id="elecBalance" type="number" step="0.01" min="0"
+            value="" placeholder="0.00" oninput="saveBalance('elec', this.value); updateBalanceDays()">
+        </div>
+        <div class="days-remaining ok" id="elecDaysRemaining">-- days remaining</div>
+        <div class="days-bar-container"><div class="days-bar" id="elecDaysBar" style="width:0%"></div></div>
+        <div class="topup-date" id="elecTopupDate"></div>
+        <div class="payg-card-rate">26.16p/kWh &bull; 54.08p/day standing &bull; £8/wk debt</div>
       </div>
-      <div class="stat" style="border-left: 3px solid #81c784;">
-        <div class="stat-label">Avg Daily</div>
-        <div class="stat-value" id="energyAvgDaily" style="color: #81c784;">--</div>
-        <div class="stat-room">based on last 7 days</div>
+    </div>
+
+    <!-- Budget comparison vs Next estimate -->
+    <div class="budget-comparison" id="budgetComparison">
+      <div class="budget-item">
+        <div class="budget-label">Next Estimate</div>
+        <div class="budget-value">£230.54</div>
+        <div class="budget-sub">per month (energy)</div>
       </div>
-      <div class="stat" style="border-left: 3px solid #ff7043;">
-        <div class="stat-label">Gas Yesterday</div>
-        <div class="stat-value" id="gasYesterday" style="color: #ff7043;">--</div>
-        <div class="stat-room">kWh</div>
+      <div class="budget-item">
+        <div class="budget-label">Debt Repayment</div>
+        <div class="budget-value">£34.64</div>
+        <div class="budget-sub">£8/wk × 4.33</div>
       </div>
-      <div class="stat" style="border-left: 3px solid #9575cd;">
-        <div class="stat-label">Elec Yesterday</div>
-        <div class="stat-value" id="elecYesterday" style="color: #9575cd;">--</div>
-        <div class="stat-room">kWh</div>
+      <div class="budget-item">
+        <div class="budget-label">Projected Monthly</div>
+        <div class="budget-value" id="projectedMonthly">--</div>
+        <div class="budget-sub" id="projectedBasis">based on last X days</div>
       </div>
+      <div class="budget-item" id="budgetDiffItem">
+        <div class="budget-label">vs Estimate</div>
+        <div class="budget-value" id="budgetDiff">--</div>
+        <div class="budget-sub" id="budgetDiffSub">--</div>
+      </div>
+    </div>
+
+    <!-- Period Breakdown Table -->
+    <div class="energy-table-container">
+      <table class="energy-table">
+        <thead>
+          <tr>
+            <th style="text-align:left;">Period</th>
+            <th class="gas-col">Gas kWh</th>
+            <th class="gas-col">Gas £</th>
+            <th class="elec-col">Elec kWh</th>
+            <th class="elec-col">Elec £</th>
+            <th class="total-col">Total £</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="period-label">Yesterday</td>
+            <td class="gas-col" id="t-yday-gas-kwh">--</td>
+            <td class="gas-col" id="t-yday-gas-cost">--</td>
+            <td class="elec-col" id="t-yday-elec-kwh">--</td>
+            <td class="elec-col" id="t-yday-elec-cost">--</td>
+            <td class="total-col" id="t-yday-total">--</td>
+          </tr>
+          <tr>
+            <td class="period-label">This Week</td>
+            <td class="gas-col" id="t-week-gas-kwh">--</td>
+            <td class="gas-col" id="t-week-gas-cost">--</td>
+            <td class="elec-col" id="t-week-elec-kwh">--</td>
+            <td class="elec-col" id="t-week-elec-cost">--</td>
+            <td class="total-col" id="t-week-total">--</td>
+          </tr>
+          <tr>
+            <td class="period-label">Last Week</td>
+            <td class="gas-col" id="t-lweek-gas-kwh">--</td>
+            <td class="gas-col" id="t-lweek-gas-cost">--</td>
+            <td class="elec-col" id="t-lweek-elec-kwh">--</td>
+            <td class="elec-col" id="t-lweek-elec-cost">--</td>
+            <td class="total-col" id="t-lweek-total">--</td>
+          </tr>
+          <tr class="highlight-row">
+            <td class="period-label" id="thisPeriodLabel">This Period</td>
+            <td class="gas-col" id="t-period-gas-kwh">--</td>
+            <td class="gas-col" id="t-period-gas-cost">--</td>
+            <td class="elec-col" id="t-period-elec-kwh">--</td>
+            <td class="elec-col" id="t-period-elec-cost">--</td>
+            <td class="total-col" id="t-period-total">--</td>
+          </tr>
+          <tr>
+            <td class="period-label" id="lastPeriodLabel">Last Period</td>
+            <td class="gas-col" id="t-lperiod-gas-kwh">--</td>
+            <td class="gas-col" id="t-lperiod-gas-cost">--</td>
+            <td class="elec-col" id="t-lperiod-elec-kwh">--</td>
+            <td class="elec-col" id="t-lperiod-elec-cost">--</td>
+            <td class="total-col" id="t-lperiod-total">--</td>
+          </tr>
+        </tbody>
+      </table>
     </div>
 
     <div class="chart-container">
@@ -1553,7 +1881,7 @@
         document.getElementById('energyNoData').style.display = hasData ? 'none' : 'block';
 
         // Update stats
-        updateEnergyStats(currentData, dailyData);
+        updateEnergyStats(currentData);
 
         // Render charts
         renderDailyEnergyChart(dailyData);
@@ -1566,62 +1894,199 @@
       }
     }
 
-    function updateEnergyStats(currentData, dailyData) {
-      const gasYesterday = currentData.yesterday?.gas || 0;
-      const elecYesterday = currentData.yesterday?.electricity || 0;
-      const gasWeek = currentData.lastWeek?.gas || 0;
-      const elecWeek = currentData.lastWeek?.electricity || 0;
+    function updateEnergyStats(currentData) {
+      // Current PAYG tariff (Next Flex Smart PAYG, from 27/02/2026)
+      const GAS_RATE = 5.63;       // p/kWh
+      const GAS_STANDING = 35.11;  // p/day
+      const ELEC_RATE = 26.16;     // p/kWh
+      const ELEC_STANDING = 54.08; // p/day
 
-      // Get actual costs from API if available (in pence)
-      const gasYesterdayCost = currentData.yesterday?.gas_cost || 0;
-      const elecYesterdayCost = currentData.yesterday?.electricity_cost || 0;
-      const gasWeekCost = currentData.lastWeek?.gas_cost || 0;
-      const elecWeekCost = currentData.lastWeek?.electricity_cost || 0;
-
-      // Tariff history (for reference when analysing costs):
-      // Before 05 Sept 2025: Next Secure Fixed 12m v18 (Elec: 24.106p, Gas: 6.025p, Standing: 68.624p + 35.208p)
-      // 05 Sept 2025 - 10 Jan 2026: Variable (Elec: 28.483p, Gas: 6.164p, Standing: 62.226p + 42.915p)
-      // 10 Jan 2026 onwards: Next Gust 12m (Elec: 25.33p, Gas: 6.03p, Standing: 61.07p + 41.76p)
-
-      // Standing charges (pence per day) - still needed for total cost
-      const standingGas = 41.76;  // Next Gust 12m
-      const standingElec = 61.07; // Next Gust 12m
-      const dailyStanding = standingGas + standingElec;
-
-      // Use actual API costs if available, otherwise fall back to calculation
-      const hasYesterdayCosts = gasYesterdayCost > 0 || elecYesterdayCost > 0;
-      const hasWeekCosts = gasWeekCost > 0 || elecWeekCost > 0;
-
-      // Fallback rates for calculation if API costs not available (Next Gust 12m)
-      const gasRate = 6.03;
-      const elecRate = 25.33;
-
-      let yesterdayCost, weekCost;
-      if (hasYesterdayCosts) {
-        // Use actual costs from smart meter + standing charges
-        yesterdayCost = (gasYesterdayCost + elecYesterdayCost + dailyStanding) / 100;
-      } else {
-        yesterdayCost = (gasYesterday * gasRate + elecYesterday * elecRate + dailyStanding) / 100;
+      function calcCosts(gasKwh, elecKwh, days) {
+        const gasUsage = gasKwh * GAS_RATE;
+        const gasStanding = days * GAS_STANDING;
+        const elecUsage = elecKwh * ELEC_RATE;
+        const elecStanding = days * ELEC_STANDING;
+        return {
+          gasCost: (gasUsage + gasStanding) / 100,
+          elecCost: (elecUsage + elecStanding) / 100,
+          gasUsageCost: gasUsage / 100,
+          elecUsageCost: elecUsage / 100,
+          gasStandingCost: gasStanding / 100,
+          elecStandingCost: elecStanding / 100,
+          total: (gasUsage + gasStanding + elecUsage + elecStanding) / 100
+        };
       }
 
-      if (hasWeekCosts) {
-        weekCost = (gasWeekCost + elecWeekCost + (dailyStanding * 7)) / 100;
-      } else {
-        weekCost = (gasWeek * gasRate + elecWeek * elecRate + (dailyStanding * 7)) / 100;
+      function fmt(n) { return n > 0 ? `£${n.toFixed(2)}` : '--'; }
+      function fmtKwh(n) { return n > 0 ? n.toFixed(1) : '--'; }
+
+      function fillRow(prefix, gasKwh, elecKwh, days) {
+        const c = calcCosts(gasKwh, elecKwh, days);
+        const hasData = gasKwh > 0 || elecKwh > 0;
+        document.getElementById(`t-${prefix}-gas-kwh`).textContent = fmtKwh(gasKwh);
+        document.getElementById(`t-${prefix}-gas-cost`).textContent = hasData ? fmt(c.gasCost) : '--';
+        document.getElementById(`t-${prefix}-elec-kwh`).textContent = fmtKwh(elecKwh);
+        document.getElementById(`t-${prefix}-elec-cost`).textContent = hasData ? fmt(c.elecCost) : '--';
+        document.getElementById(`t-${prefix}-total`).textContent = hasData ? fmt(c.total) : '--';
       }
 
-      const avgDaily = weekCost / 7;
+      // Calculate week days elapsed (Mon=1 to Sun=7)
+      const today = new Date();
+      const todayDow = today.getDay(); // 0=Sun, 1=Mon...6=Sat
+      const thisWeekDays = todayDow === 0 ? 7 : todayDow;
 
-      document.getElementById('energyYesterday').textContent = gasYesterday > 0 ? `£${yesterdayCost.toFixed(2)}` : '--';
-      document.getElementById('energyYesterdayBreakdown').textContent = gasYesterday > 0 ? `Gas: ${gasYesterday.toFixed(1)} + Elec: ${elecYesterday.toFixed(1)} kWh` : '--';
+      // --- Yesterday ---
+      const gasYday = currentData.yesterday?.gas || 0;
+      const elecYday = currentData.yesterday?.electricity || 0;
+      fillRow('yday', gasYday, elecYday, 1);
 
-      document.getElementById('energyWeek').textContent = gasWeek > 0 ? `£${weekCost.toFixed(2)}` : '--';
-      document.getElementById('energyWeekBreakdown').textContent = gasWeek > 0 ? `Gas: ${gasWeek.toFixed(1)} + Elec: ${elecWeek.toFixed(1)} kWh` : '--';
+      // --- This Week ---
+      const gasWeek = currentData.thisWeek?.gas || 0;
+      const elecWeek = currentData.thisWeek?.electricity || 0;
+      fillRow('week', gasWeek, elecWeek, thisWeekDays);
 
-      document.getElementById('energyAvgDaily').textContent = gasWeek > 0 ? `£${avgDaily.toFixed(2)}` : '--';
+      // --- Last Week ---
+      const gasLweek = currentData.lastWeek?.gas || 0;
+      const elecLweek = currentData.lastWeek?.electricity || 0;
+      fillRow('lweek', gasLweek, elecLweek, 7);
 
-      document.getElementById('gasYesterday').textContent = gasYesterday > 0 ? gasYesterday.toFixed(1) : '--';
-      document.getElementById('elecYesterday').textContent = elecYesterday > 0 ? elecYesterday.toFixed(1) : '--';
+      // --- This Billing Period ---
+      const thisPeriod = currentData.thisPeriod || {};
+      const gasThisPeriod = thisPeriod.data?.gas || 0;
+      const elecThisPeriod = thisPeriod.data?.electricity || 0;
+      const thisPeriodDays = thisPeriod.days || 1;
+      const thisPeriodStart = thisPeriod.start || '';
+      fillRow('period', gasThisPeriod, elecThisPeriod, thisPeriodDays);
+
+      if (thisPeriodStart) {
+        const startDate = new Date(thisPeriodStart);
+        const startLabel = startDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+        document.getElementById('thisPeriodLabel').innerHTML =
+          `This Period <span class="sub-label">since ${startLabel}</span>`;
+      }
+
+      // --- Last Billing Period ---
+      const lastPeriod = currentData.lastPeriod || {};
+      const gasLperiod = lastPeriod.data?.gas || 0;
+      const elecLperiod = lastPeriod.data?.electricity || 0;
+      const lastPeriodDays = lastPeriod.days || 30;
+      const lastPeriodStart = lastPeriod.start || '';
+      const lastPeriodEnd = lastPeriod.end || '';
+      fillRow('lperiod', gasLperiod, elecLperiod, lastPeriodDays);
+
+      if (lastPeriodStart && lastPeriodEnd) {
+        const s = new Date(lastPeriodStart).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+        const e = new Date(lastPeriodEnd).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+        document.getElementById('lastPeriodLabel').innerHTML =
+          `Last Period <span class="sub-label">${s} – ${e}</span>`;
+      }
+
+      // --- PAYG Summary Cards (This Billing Period) ---
+      const hasThisPeriod = gasThisPeriod > 0 || elecThisPeriod > 0;
+      const periodCosts = calcCosts(gasThisPeriod, elecThisPeriod, thisPeriodDays);
+      const gasDailyAvg = thisPeriodDays > 0 ? periodCosts.gasCost / thisPeriodDays : 0;
+      const elecDailyAvg = thisPeriodDays > 0 ? periodCosts.elecCost / thisPeriodDays : 0;
+
+      if (thisPeriodStart) {
+        const startDate = new Date(thisPeriodStart);
+        const startLabel = startDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+        document.getElementById('gasPeriodLabel').textContent = `Since ${startLabel} (${thisPeriodDays} days)`;
+        document.getElementById('elecPeriodLabel').textContent = `Since ${startLabel} (${thisPeriodDays} days)`;
+      }
+
+      document.getElementById('gasPeriodTotal').textContent = hasThisPeriod ? fmt(periodCosts.gasCost) : '--';
+      document.getElementById('gasPeriodBreakdown').innerHTML = hasThisPeriod
+        ? `${gasThisPeriod.toFixed(1)} kWh × 5.63p = ${fmt(periodCosts.gasUsageCost)}<br>Standing ${thisPeriodDays}d × 35.11p = ${fmt(periodCosts.gasStandingCost)}`
+        : 'No data yet';
+      document.getElementById('gasPeriodDaily').textContent = hasThisPeriod
+        ? `Daily avg: ${fmt(gasDailyAvg)}/day` : '';
+
+      document.getElementById('elecPeriodTotal').textContent = hasThisPeriod ? fmt(periodCosts.elecCost) : '--';
+      document.getElementById('elecPeriodBreakdown').innerHTML = hasThisPeriod
+        ? `${elecThisPeriod.toFixed(1)} kWh × 26.16p = ${fmt(periodCosts.elecUsageCost)}<br>Standing ${thisPeriodDays}d × 54.08p = ${fmt(periodCosts.elecStandingCost)}`
+        : 'No data yet';
+      document.getElementById('elecPeriodDaily').textContent = hasThisPeriod
+        ? `Daily avg: ${fmt(elecDailyAvg)}/day` : '';
+
+      // Store daily rates globally for balance tracker
+      window._gasDailyRate = gasDailyAvg;
+      window._elecDailyRate = elecDailyAvg;
+      window._periodDays = thisPeriodDays;
+
+      // Budget comparison vs Next estimate
+      if (hasThisPeriod && thisPeriodDays > 0) {
+        const projGas = (gasThisPeriod / thisPeriodDays) * 30;
+        const projElec = (elecThisPeriod / thisPeriodDays) * 30;
+        const projCosts = calcCosts(projGas, projElec, 30);
+        const nextEstimate = 230.54;
+        const diff = projCosts.total - nextEstimate;
+        const diffEl = document.getElementById('budgetDiff');
+        const diffItemEl = document.getElementById('budgetDiffItem');
+
+        document.getElementById('projectedMonthly').textContent = fmt(projCosts.total);
+        document.getElementById('projectedBasis').textContent = `based on last ${thisPeriodDays} days`;
+
+        diffEl.textContent = diff < 0 ? `£${Math.abs(diff).toFixed(2)} under` : `£${diff.toFixed(2)} over`;
+        diffItemEl.className = `budget-item ${diff < 0 ? 'under' : 'over'}`;
+        document.getElementById('budgetDiffSub').textContent = diff < 0
+          ? 'below estimate ✓' : 'above estimate';
+      }
+
+      // Load saved balances and update days
+      loadSavedBalances();
+      updateBalanceDays();
+    }
+
+    function saveBalance(type, value) {
+      localStorage.setItem(`paygBalance_${type}`, value);
+    }
+
+    function loadSavedBalances() {
+      const gasVal = localStorage.getItem('paygBalance_gas');
+      const elecVal = localStorage.getItem('paygBalance_elec');
+      if (gasVal !== null) document.getElementById('gasBalance').value = gasVal;
+      if (elecVal !== null) document.getElementById('elecBalance').value = elecVal;
+    }
+
+    function updateBalanceDays() {
+      const DEBT_WEEKLY = 8.00;
+      const gasDailyRate = window._gasDailyRate || 0;
+      const elecDailyRate = window._elecDailyRate || 0;
+      if (gasDailyRate === 0 && elecDailyRate === 0) return;
+
+      // Split £8/week debt pro-rata between gas and elec
+      const totalRate = gasDailyRate + elecDailyRate;
+      const gasDebtDaily = totalRate > 0 ? (gasDailyRate / totalRate) * (DEBT_WEEKLY / 7) : 0;
+      const elecDebtDaily = totalRate > 0 ? (elecDailyRate / totalRate) * (DEBT_WEEKLY / 7) : 0;
+      const gasTotalDaily = gasDailyRate + gasDebtDaily;
+      const elecTotalDaily = elecDailyRate + elecDebtDaily;
+
+      const gasBalance = parseFloat(document.getElementById('gasBalance').value) || 0;
+      const elecBalance = parseFloat(document.getElementById('elecBalance').value) || 0;
+
+      function setDays(prefix, balance, dailyRate, color) {
+        const daysEl = document.getElementById(`${prefix}DaysRemaining`);
+        const barEl = document.getElementById(`${prefix}DaysBar`);
+        const dateEl = document.getElementById(`${prefix}TopupDate`);
+        if (balance <= 0 || dailyRate <= 0) {
+          daysEl.textContent = balance > 0 ? 'Enter daily rate...' : 'Enter balance above';
+          barEl.style.width = '0%';
+          dateEl.textContent = '';
+          return;
+        }
+        const days = balance / dailyRate;
+        const topupDate = new Date();
+        topupDate.setDate(topupDate.getDate() + Math.floor(days));
+        const dateStr = topupDate.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+        daysEl.textContent = `${Math.floor(days)} days remaining`;
+        daysEl.className = `days-remaining ${days < 7 ? 'critical' : days < 14 ? 'warning' : 'ok'}`;
+        const barPct = Math.min(100, (days / 30) * 100);
+        barEl.style.width = `${barPct}%`;
+        dateEl.textContent = `Top up by: ${dateStr}`;
+      }
+
+      setDays('gas', gasBalance, gasTotalDaily);
+      setDays('elec', elecBalance, elecTotalDaily);
     }
 
     function renderDailyEnergyChart(dailyData) {
