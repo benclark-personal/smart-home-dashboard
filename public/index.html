@@ -505,14 +505,74 @@
       margin-bottom: 10px;
     }
 
-    .payg-card-total {
-      font-size: 2.2rem;
+    /* Balance hero (the big number at the top of the card) */
+    .balance-hero {
+      font-size: 2.6rem;
       font-weight: 700;
-      margin-bottom: 4px;
+      margin: 8px 0 2px;
+      line-height: 1;
     }
 
-    .gas-card .payg-card-total { color: #ff7043; }
-    .elec-card .payg-card-total { color: #9575cd; }
+    .gas-card .balance-hero { color: #ff7043; }
+    .elec-card .balance-hero { color: #9575cd; }
+
+    .balance-hero-sub {
+      font-size: 0.78rem;
+      color: #777;
+      margin-bottom: 8px;
+    }
+
+    /* Compact balance entry row */
+    .balance-entry-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin: 0 0 10px;
+      padding: 6px 8px;
+      background: rgba(255,255,255,0.04);
+      border-radius: 6px;
+    }
+
+    .balance-entry-label {
+      font-size: 0.75rem;
+      color: #666;
+    }
+
+    .balance-input-sm {
+      background: transparent;
+      border: none;
+      border-bottom: 1px solid rgba(255,255,255,0.2);
+      color: #ddd;
+      font-size: 0.9rem;
+      font-weight: 600;
+      padding: 2px 4px;
+      width: 68px;
+      text-align: center;
+      outline: none;
+    }
+
+    /* Inline period tag in card header */
+    .payg-period-tag {
+      font-size: 0.7rem;
+      color: #555;
+      font-weight: 400;
+      margin-left: 6px;
+    }
+
+    /* Period stats footer */
+    .period-stats {
+      font-size: 0.75rem;
+      color: #666;
+      margin-top: 8px;
+      padding-top: 8px;
+      border-top: 1px solid rgba(255,255,255,0.06);
+      line-height: 1.7;
+    }
+
+    .period-stats .period-summary {
+      color: #888;
+      font-weight: 600;
+    }
 
     .payg-card-breakdown {
       font-size: 0.8rem;
@@ -582,6 +642,63 @@
       font-size: 0.78rem;
       color: #888;
       margin-top: 2px;
+    }
+
+    .balance-date-label {
+      color: #555;
+      font-size: 0.8rem;
+      margin: 0 5px;
+    }
+
+    .balance-date-input {
+      background: transparent;
+      border: none;
+      border-bottom: 1px solid rgba(255,255,255,0.15);
+      color: #bbb;
+      font-size: 0.82rem;
+      padding: 2px 4px;
+      width: 118px;
+      outline: none;
+      cursor: pointer;
+      color-scheme: dark;
+    }
+
+    .est-balance-display {
+      font-size: 0.79rem;
+      color: #777;
+      margin: 2px 0 4px;
+      min-height: 1em;
+    }
+
+    .payday-status {
+      margin-top: 8px;
+      padding: 7px 10px;
+      border-radius: 6px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      display: none;
+      line-height: 1.4;
+    }
+
+    .payday-status.ok {
+      background: rgba(129,199,132,0.1);
+      color: #81c784;
+      border: 1px solid rgba(129,199,132,0.2);
+      display: block;
+    }
+
+    .payday-status.warning {
+      background: rgba(255,152,0,0.1);
+      color: #ffb74d;
+      border: 1px solid rgba(255,152,0,0.3);
+      display: block;
+    }
+
+    .payday-status.critical {
+      background: rgba(255,82,82,0.08);
+      color: #ff5252;
+      border: 1px solid rgba(255,82,82,0.25);
+      display: block;
     }
 
     /* Progress bar for days remaining */
@@ -898,38 +1015,46 @@
     <!-- PAYG Meter Summary Cards -->
     <div class="energy-payg-summary">
       <div class="payg-card gas-card">
-        <div class="payg-card-header">Gas Meter</div>
-        <div class="payg-card-period" id="gasPeriodLabel">This billing period (since 27th)</div>
-        <div class="payg-card-total" id="gasPeriodTotal">--</div>
-        <div class="payg-card-breakdown" id="gasPeriodBreakdown">--</div>
-        <div class="payg-card-daily" id="gasPeriodDaily"></div>
-        <div class="balance-row">
-          <span class="balance-label">Balance</span>
-          <span style="color:#888; font-size:0.9rem;">£</span>
-          <input class="balance-input" id="gasBalance" type="number" step="0.01" min="0"
-            value="" placeholder="0.00" oninput="saveBalance('gas', this.value); updateBalanceDays()">
+        <div class="payg-card-header">Gas Meter <span class="payg-period-tag" id="gasPeriodLabel"></span></div>
+        <div class="balance-hero" id="gasBalanceHero">--</div>
+        <div class="balance-hero-sub" id="gasBalanceHeroSub">Enter balance below</div>
+        <div class="balance-entry-row">
+          <span class="balance-entry-label">Entered £</span>
+          <input class="balance-input-sm" id="gasBalance" type="number" step="0.01" min="0"
+            value="" placeholder="0.00" oninput="onBalanceChange('gas')">
+          <span class="balance-date-label">on</span>
+          <input class="balance-date-input" id="gasBalanceDate" type="date" oninput="onBalanceChange('gas')">
         </div>
         <div class="days-remaining ok" id="gasDaysRemaining">-- days remaining</div>
         <div class="days-bar-container"><div class="days-bar" id="gasDaysBar" style="width:0%"></div></div>
         <div class="topup-date" id="gasTopupDate"></div>
-        <div class="payg-card-rate">5.63p/kWh &bull; 35.11p/day standing &bull; £8/wk debt</div>
+        <div class="payday-status" id="gasPaydayStatus"></div>
+        <div class="period-stats">
+          <div class="period-summary"><span id="gasPeriodTotal"></span><span id="gasPeriodDaily"></span></div>
+          <div id="gasPeriodBreakdown"></div>
+        </div>
+        <div class="payg-card-rate" id="gasCardRate">5.63p/kWh &bull; 35.11p/day standing &bull; £8/wk debt</div>
       </div>
       <div class="payg-card elec-card">
-        <div class="payg-card-header">Electricity Meter</div>
-        <div class="payg-card-period" id="elecPeriodLabel">This billing period (since 27th)</div>
-        <div class="payg-card-total" id="elecPeriodTotal">--</div>
-        <div class="payg-card-breakdown" id="elecPeriodBreakdown">--</div>
-        <div class="payg-card-daily" id="elecPeriodDaily"></div>
-        <div class="balance-row">
-          <span class="balance-label">Balance</span>
-          <span style="color:#888; font-size:0.9rem;">£</span>
-          <input class="balance-input" id="elecBalance" type="number" step="0.01" min="0"
-            value="" placeholder="0.00" oninput="saveBalance('elec', this.value); updateBalanceDays()">
+        <div class="payg-card-header">Electricity Meter <span class="payg-period-tag" id="elecPeriodLabel"></span></div>
+        <div class="balance-hero" id="elecBalanceHero">--</div>
+        <div class="balance-hero-sub" id="elecBalanceHeroSub">Enter balance below</div>
+        <div class="balance-entry-row">
+          <span class="balance-entry-label">Entered £</span>
+          <input class="balance-input-sm" id="elecBalance" type="number" step="0.01" min="0"
+            value="" placeholder="0.00" oninput="onBalanceChange('elec')">
+          <span class="balance-date-label">on</span>
+          <input class="balance-date-input" id="elecBalanceDate" type="date" oninput="onBalanceChange('elec')">
         </div>
         <div class="days-remaining ok" id="elecDaysRemaining">-- days remaining</div>
         <div class="days-bar-container"><div class="days-bar" id="elecDaysBar" style="width:0%"></div></div>
         <div class="topup-date" id="elecTopupDate"></div>
-        <div class="payg-card-rate">26.16p/kWh &bull; 54.08p/day standing &bull; £8/wk debt</div>
+        <div class="payday-status" id="elecPaydayStatus"></div>
+        <div class="period-stats">
+          <div class="period-summary"><span id="elecPeriodTotal"></span><span id="elecPeriodDaily"></span></div>
+          <div id="elecPeriodBreakdown"></div>
+        </div>
+        <div class="payg-card-rate" id="elecCardRate">26.16p/kWh &bull; 54.08p/day standing &bull; £8/wk debt</div>
       </div>
     </div>
 
@@ -1994,24 +2119,30 @@
         document.getElementById('elecPeriodLabel').textContent = `Since ${startLabel} (${thisPeriodDays} days)`;
       }
 
-      document.getElementById('gasPeriodTotal').textContent = hasThisPeriod ? fmt(periodCosts.gasCost) : '--';
+      document.getElementById('gasPeriodTotal').textContent = hasThisPeriod ? `${fmt(periodCosts.gasCost)} spent` : '';
       document.getElementById('gasPeriodBreakdown').innerHTML = hasThisPeriod
         ? `${gasThisPeriod.toFixed(1)} kWh × 5.63p = ${fmt(periodCosts.gasUsageCost)}<br>Standing ${thisPeriodDays}d × 35.11p = ${fmt(periodCosts.gasStandingCost)}`
-        : 'No data yet';
+        : '';
       document.getElementById('gasPeriodDaily').textContent = hasThisPeriod
-        ? `Daily avg: ${fmt(gasDailyAvg)}/day` : '';
+        ? ` · ${fmt(gasDailyAvg)}/day avg` : '';
 
-      document.getElementById('elecPeriodTotal').textContent = hasThisPeriod ? fmt(periodCosts.elecCost) : '--';
+      document.getElementById('elecPeriodTotal').textContent = hasThisPeriod ? `${fmt(periodCosts.elecCost)} spent` : '';
       document.getElementById('elecPeriodBreakdown').innerHTML = hasThisPeriod
         ? `${elecThisPeriod.toFixed(1)} kWh × 26.16p = ${fmt(periodCosts.elecUsageCost)}<br>Standing ${thisPeriodDays}d × 54.08p = ${fmt(periodCosts.elecStandingCost)}`
-        : 'No data yet';
+        : '';
       document.getElementById('elecPeriodDaily').textContent = hasThisPeriod
-        ? `Daily avg: ${fmt(elecDailyAvg)}/day` : '';
+        ? ` · ${fmt(elecDailyAvg)}/day avg` : '';
 
       // Store daily rates globally for balance tracker
       window._gasDailyRate = gasDailyAvg;
       window._elecDailyRate = elecDailyAvg;
       window._periodDays = thisPeriodDays;
+      window._gasRateStanding = GAS_STANDING / 100;
+      window._elecRateStanding = ELEC_STANDING / 100;
+      window._gasRateUsage = gasThisPeriod > 0 && thisPeriodDays > 0
+        ? (gasThisPeriod * GAS_RATE / 100 / thisPeriodDays) : 0;
+      window._elecRateUsage = elecThisPeriod > 0 && thisPeriodDays > 0
+        ? (elecThisPeriod * ELEC_RATE / 100 / thisPeriodDays) : 0;
 
       // Budget comparison vs Next estimate
       if (hasThisPeriod && thisPeriodDays > 0) {
@@ -2037,15 +2168,55 @@
       updateBalanceDays();
     }
 
+    function onBalanceChange(type) {
+      const amount = parseFloat(document.getElementById(`${type}Balance`).value) || 0;
+      let dateVal = document.getElementById(`${type}BalanceDate`).value;
+      if (!dateVal) {
+        dateVal = new Date().toISOString().slice(0, 10);
+        document.getElementById(`${type}BalanceDate`).value = dateVal;
+      }
+      localStorage.setItem(`paygBalance_${type}`, JSON.stringify({ amount, date: dateVal }));
+      updateBalanceDays();
+    }
+
     function saveBalance(type, value) {
-      localStorage.setItem(`paygBalance_${type}`, value);
+      // Legacy compat – update amount keeping existing date
+      const raw = localStorage.getItem(`paygBalance_${type}`);
+      let existing = {};
+      try { existing = JSON.parse(raw) || {}; } catch(e) {}
+      const date = existing.date || new Date().toISOString().slice(0, 10);
+      localStorage.setItem(`paygBalance_${type}`, JSON.stringify({ amount: parseFloat(value) || 0, date }));
     }
 
     function loadSavedBalances() {
-      const gasVal = localStorage.getItem('paygBalance_gas');
-      const elecVal = localStorage.getItem('paygBalance_elec');
-      if (gasVal !== null) document.getElementById('gasBalance').value = gasVal;
-      if (elecVal !== null) document.getElementById('elecBalance').value = elecVal;
+      ['gas', 'elec'].forEach(type => {
+        const raw = localStorage.getItem(`paygBalance_${type}`);
+        if (raw === null) return;
+        try {
+          const parsed = JSON.parse(raw);
+          if (parsed && typeof parsed === 'object') {
+            if (parsed.amount !== undefined) document.getElementById(`${type}Balance`).value = parsed.amount;
+            if (parsed.date) document.getElementById(`${type}BalanceDate`).value = parsed.date;
+          } else {
+            // Legacy plain number – migrate to new format
+            const amount = parseFloat(raw) || 0;
+            const today = new Date().toISOString().slice(0, 10);
+            document.getElementById(`${type}Balance`).value = amount;
+            document.getElementById(`${type}BalanceDate`).value = today;
+            localStorage.setItem(`paygBalance_${type}`, JSON.stringify({ amount, date: today }));
+          }
+        } catch(e) {}
+      });
+    }
+
+    function getNextPayday() {
+      const now = new Date();
+      now.setHours(0, 0, 0, 0);
+      let target = new Date(now.getFullYear(), now.getMonth(), 27);
+      if (now.getDate() >= 27) {
+        target = new Date(now.getFullYear(), now.getMonth() + 1, 27);
+      }
+      return target;
     }
 
     function updateBalanceDays() {
@@ -2061,32 +2232,112 @@
       const gasTotalDaily = gasDailyRate + gasDebtDaily;
       const elecTotalDaily = elecDailyRate + elecDebtDaily;
 
-      const gasBalance = parseFloat(document.getElementById('gasBalance').value) || 0;
-      const elecBalance = parseFloat(document.getElementById('elecBalance').value) || 0;
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const nextPayday = getNextPayday();
+      const daysToPayday = Math.round((nextPayday - today) / 86400000);
+      const paydayStr = nextPayday.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
 
-      function setDays(prefix, balance, dailyRate, color) {
+      // Update rate breakdown in card footer
+      const gasUsage = window._gasRateUsage || 0;
+      const elecUsage = window._elecRateUsage || 0;
+      const gasStanding = window._gasRateStanding || 0.3511;
+      const elecStanding = window._elecRateStanding || 0.5408;
+      const gasRateEl = document.getElementById('gasCardRate');
+      const elecRateEl = document.getElementById('elecCardRate');
+      if (gasRateEl && gasDailyRate > 0) {
+        gasRateEl.innerHTML = `5.63p/kWh &bull; 35.11p/day standing &bull; £8/wk debt<br>
+          <span style="color:#999">Usage £${gasUsage.toFixed(2)} + Standing £${gasStanding.toFixed(2)} + Debt £${gasDebtDaily.toFixed(2)} = <strong style="color:#bbb">£${gasTotalDaily.toFixed(2)}/day</strong></span>`;
+      }
+      if (elecRateEl && elecDailyRate > 0) {
+        elecRateEl.innerHTML = `26.16p/kWh &bull; 54.08p/day standing &bull; £8/wk debt<br>
+          <span style="color:#999">Usage £${elecUsage.toFixed(2)} + Standing £${elecStanding.toFixed(2)} + Debt £${elecDebtDaily.toFixed(2)} = <strong style="color:#bbb">£${elecTotalDaily.toFixed(2)}/day</strong></span>`;
+      }
+
+      function setMeter(prefix, dailyRate) {
         const daysEl = document.getElementById(`${prefix}DaysRemaining`);
         const barEl = document.getElementById(`${prefix}DaysBar`);
         const dateEl = document.getElementById(`${prefix}TopupDate`);
-        if (balance <= 0 || dailyRate <= 0) {
-          daysEl.textContent = balance > 0 ? 'Enter daily rate...' : 'Enter balance above';
+        const heroEl = document.getElementById(`${prefix}BalanceHero`);
+        const heroSubEl = document.getElementById(`${prefix}BalanceHeroSub`);
+        const paydayEl = document.getElementById(`${prefix}PaydayStatus`);
+
+        const enteredBalance = parseFloat(document.getElementById(`${prefix}Balance`).value) || 0;
+        const dateVal = document.getElementById(`${prefix}BalanceDate`).value;
+
+        if (enteredBalance <= 0) {
+          if (heroEl) heroEl.textContent = '--';
+          if (heroSubEl) heroSubEl.textContent = 'Enter balance below';
+          daysEl.textContent = 'Enter balance above';
+          daysEl.className = 'days-remaining ok';
           barEl.style.width = '0%';
           dateEl.textContent = '';
+          if (paydayEl) paydayEl.className = 'payday-status';
           return;
         }
-        const days = balance / dailyRate;
-        const topupDate = new Date();
-        topupDate.setDate(topupDate.getDate() + Math.floor(days));
-        const dateStr = topupDate.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
-        daysEl.textContent = `${Math.floor(days)} days remaining`;
-        daysEl.className = `days-remaining ${days < 7 ? 'critical' : days < 14 ? 'warning' : 'ok'}`;
-        const barPct = Math.min(100, (days / 30) * 100);
+
+        // Days elapsed since balance was entered
+        let daysAgo = 0;
+        if (dateVal) {
+          const entryDate = new Date(dateVal);
+          entryDate.setHours(0, 0, 0, 0);
+          daysAgo = Math.max(0, Math.round((today - entryDate) / 86400000));
+        }
+
+        // Estimated current balance after decay
+        const decayed = daysAgo * dailyRate;
+        const estBalance = Math.max(0, enteredBalance - decayed);
+        const daysFromNow = dailyRate > 0 ? estBalance / dailyRate : 0;
+
+        // Balance hero display
+        if (heroEl) heroEl.textContent = estBalance > 0 ? `£${estBalance.toFixed(2)}` : '£0.00';
+        if (heroSubEl) {
+          if (estBalance <= 0) {
+            heroSubEl.textContent = '⚠ Balance may be depleted';
+            heroSubEl.style.color = '#ff5252';
+          } else if (daysAgo > 0) {
+            heroSubEl.textContent = `Estimated · entered £${enteredBalance.toFixed(2)} ${daysAgo === 1 ? 'yesterday' : daysAgo + 'd ago'} (−£${decayed.toFixed(2)})`;
+            heroSubEl.style.color = '';
+          } else {
+            heroSubEl.textContent = 'Current balance';
+            heroSubEl.style.color = '';
+          }
+        }
+
+        // Days remaining
+        daysEl.textContent = `${Math.floor(daysFromNow)} days remaining`;
+        daysEl.className = `days-remaining ${daysFromNow < 7 ? 'critical' : daysFromNow < 14 ? 'warning' : 'ok'}`;
+        const barPct = Math.min(100, (daysFromNow / 30) * 100);
         barEl.style.width = `${barPct}%`;
-        dateEl.textContent = `Top up by: ${dateStr}`;
+
+        // Run-out date
+        const runOutDate = new Date(today);
+        runOutDate.setDate(runOutDate.getDate() + Math.floor(daysFromNow));
+        const runOutStr = runOutDate.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+        dateEl.textContent = `Runs out: ${runOutStr}`;
+
+        // Payday status
+        if (paydayEl) {
+          const daysDiff = Math.floor(daysFromNow) - daysToPayday;
+          if (daysDiff >= 0) {
+            paydayEl.textContent = `✓ Covers payday ${paydayStr} (+${daysDiff} days spare)`;
+            paydayEl.className = 'payday-status ok';
+          } else {
+            const shortfall = Math.abs(daysDiff);
+            const topupNeeded = (shortfall * dailyRate).toFixed(2);
+            if (shortfall <= 5) {
+              paydayEl.textContent = `⚠ Runs out ${shortfall} day${shortfall !== 1 ? 's' : ''} before payday ${paydayStr} — top up £${topupNeeded}`;
+              paydayEl.className = 'payday-status warning';
+            } else {
+              paydayEl.textContent = `✗ Runs out ${shortfall} days before payday ${paydayStr} — top up £${topupNeeded}`;
+              paydayEl.className = 'payday-status critical';
+            }
+          }
+        }
       }
 
-      setDays('gas', gasBalance, gasTotalDaily);
-      setDays('elec', elecBalance, elecTotalDaily);
+      setMeter('gas', gasTotalDaily);
+      setMeter('elec', elecTotalDaily);
     }
 
     function renderDailyEnergyChart(dailyData) {

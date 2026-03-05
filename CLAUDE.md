@@ -80,6 +80,7 @@ Sensors registered via HP2561 console "Sensor ID" feature to lock specific senso
 ### Central Heating Thermostat
 - **Location:** Entrance Hall (wall opposite WC, near stairs)
 - **Current Setting:** 22°C (dial shows 4 dots between 20-30, set to first dot = 22°C)
+- **Actual Cutoff:** ~21°C (confirmed 20/02/2026 — dial was off with ch2 reading 21.2°C, ~1°C hysteresis)
 - **Reference Sensor:** ch2 (Entrance Hall) placed nearby for comparison
 
 ### Heating Schedule
@@ -348,6 +349,13 @@ curl "http://192.168.0.145:3001/api/energy/backfill?days=400"  # Max ~13 months
 - **Purpose:** Test heat retention with doors closed vs typical open-door baseline
 - **Expected:** Bedrooms should retain heat better overnight; living room may be cooler but more stable
 
+### Tumble Dryer Running (20/02/2026)
+- **Time:** ~14:00 onwards
+- **Location:** Laundry room
+- **Conditions:** Dining room and laundry connected via kitchen (open), all other room doors open
+- **Heating:** Continuous schedule (06:00-22:00) but thermostat off at time of observation (21.2°C hallway)
+- **Impact:** Elevated temps in Laundry (24.8°C) and Dining Room (24.1°C)
+
 ### Energy Data Availability Issue - RESOLVED (05-10/02/2026)
 - **Date:** 05-10 February 2026
 - **Issue:** Incomplete smart meter data from DCC/Bright API
@@ -557,9 +565,21 @@ ssh root@192.168.0.145 'pkill chromium; DISPLAY=:0 chromium --no-sandbox --kiosk
 
 ### Deploy updated files
 ```bash
-cat public/index.html | ssh root@192.168.0.145 'cat > /opt/smart-home-dashboard/public/index.html'
-cat server.js | ssh root@192.168.0.145 'cat > /opt/smart-home-dashboard/server.js'
+# Safe deploy - ALWAYS use these excludes to protect Pi-only files
+rsync -avz --delete \
+  --exclude='.env' \
+  --exclude='node_modules/' \
+  --exclude='readings.db' \
+  --exclude='*.log' \
+  -e "sshpass -p 'holymoly10' ssh" \
+  ~/repos/personal/smart_home_dashboard/ \
+  root@192.168.0.145:/opt/smart-home-dashboard/
+
+# Restart after deploy
+sshpass -p 'holymoly10' ssh root@192.168.0.145 'systemctl restart smart-home-dashboard'
 ```
+
+> ⚠️ NEVER use rsync --delete without the excludes above. The .env file and node_modules only exist on the Pi and will be wiped, breaking the service.
 
 ---
 
